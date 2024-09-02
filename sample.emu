@@ -1,0 +1,28 @@
+|> Root
+    attr1  hello
+    attr2 hello
+
+    |> SecondTag
+        attr Root
+
+        blurb0
+            qblurb1
+        blurb2
+        blurb3
+        |> hello
+        child3
+
+        |> ThirdTag
+
+            child
+
+            beast
+    |> hey
+
+    ```
+    j
+     |> FakeTag
+      ```python
+      lll
+    qqq
+    ```
