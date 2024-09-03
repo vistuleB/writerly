@@ -778,6 +778,8 @@ const margin_line_number_pad_to = 6
 
 const margin_announce_pad_to = 30
 
+const debug_print_spaces = "    "
+
 fn margin_assembler(
   prefix: String,
   blame: Blame,
@@ -790,7 +792,7 @@ fn margin_assembler(
   <> string.pad_right(ins(blame.line_no), margin_line_number_pad_to, " ")
   <> " "
   <> string.pad_right(announce, margin_announce_pad_to, " ")
-  <> "."
+  <> "###"
   <> margin
 }
 
@@ -798,7 +800,6 @@ fn margin_suppress_blame_assembler(
   prefix: String,
   blame: Blame,
   announce: String,
-  margin: String,
 ) -> String {
   let takes_place_of_blame =
     blame.filename
@@ -811,8 +812,7 @@ fn margin_suppress_blame_assembler(
   <> takes_place_of_blame
   <> " "
   <> string.pad_right(announce, margin_announce_pad_to, " ")
-  <> "."
-  <> margin
+  <> "###"
 }
 
 fn margin_error_assembler(
@@ -894,7 +894,7 @@ fn pretty_print_tentative(
 
       list.map(tentative_blamed_attributes, fn(t) -> Nil {
         io.println(
-          margin_assembler(p, t.blame, "ATTRIBUTE", m <> "  ")
+          margin_assembler(p, t.blame, "ATTRIBUTE", m <> debug_print_spaces)
           <> ins(t.key)
           <> " "
           <> t.value,
@@ -906,13 +906,12 @@ fn pretty_print_tentative(
           io.println(margin_suppress_blame_assembler(
             p,
             blame,
-            "(pretty printer inserted)",
-            m,
+            "(printer inserted)",
           ))
         False -> Nil
       }
 
-      pretty_print_tentatives(p, m <> "  ", children)
+      pretty_print_tentatives(p, m <> debug_print_spaces, children)
     }
 
     TentativeErrorIndentationTooLarge(blame, message) ->
@@ -1009,7 +1008,7 @@ pub fn pretty_print_writerly(margin_prefix: String, margin: String, t: Writerly)
 
       list.map(tentative_blamed_attributes, fn(t) -> Nil {
         io.println(
-          margin_assembler(p, t.blame, "ATTRIBUTE", m <> "  ")
+          margin_assembler(p, t.blame, "ATTRIBUTE", m <> debug_print_spaces)
           <> ins(t.key)
           <> " "
           <> t.value,
@@ -1021,13 +1020,12 @@ pub fn pretty_print_writerly(margin_prefix: String, margin: String, t: Writerly)
           io.println(margin_suppress_blame_assembler(
             p,
             blame,
-            "(pretty printer inserted)",
-            m,
+            "(printer inserted)",
           ))
         False -> Nil
       }
 
-      pretty_print_writerlys(p, m <> "  ", children)
+      pretty_print_writerlys(p, m <> debug_print_spaces, children)
     }
   }
 }
