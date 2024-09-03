@@ -1,24 +1,65 @@
 # writerly_parser
 
-[![Package Version](https://img.shields.io/hexpm/v/writerly_parser)](https://hex.pm/packages/writerly_parser)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/writerly_parser/)
+## Intro
 
-```sh
-gleam add writerly_parser@1
+"Writerly" is a markup language inspired by Elm-Markup. It is built
+on three primitives:
+
+- xml-like nodes with key-value attribute pairs and children, where the children may be selfsame nodes or:
+  - multi-line text blurbs, or
+  - code blocks
+
+Indentation is used to indicate parent-child relationships.
+
+Line of whitespace are used to separate key-value attribute definitions from text blurbs, and to separate
+text blurbs from one another.
+
+Here is a sample:
+
 ```
-```gleam
-import writerly_parser
+|> SomeTag
+    attr1 value1
+    attr2 value2
 
-pub fn main() {
-  // TODO: An example of the project in use
-}
+    |> Child1
+        attr1 here everything after the space is the attribute value, starting with 'here'
+
+        first line of a text blurb
+        second line of a text blurb
+        etc
+        etc
+
+        new
+        text
+        blurb
+        |> ThirdTag
+
+        |> ThirdTag
+
+            child
+
+            beast
+  
+    |> Child2
+
+    here is a code block, with an annotation next to the opening quote (let's see
+    how Markdown deals with the nested triple quotes):
+
+    ```python
+    j
+     |> FakeTag
+      ```python
+      lll
+    qqq
+    ```
 ```
-
-Further documentation can be found at <https://hexdocs.pm/writerly_parser>.
 
 ## Development
 
 ```sh
 gleam run   # Run the project
-gleam test  # Run the tests
 ```
+
+## What's there
+
+...
