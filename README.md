@@ -6,12 +6,12 @@
 on three primitives:
 
 - xml-like nodes with key-value attribute pairs and children, where the children may be selfsame nodes or:
-  - multi-line text blurbs, or
-  - code blocks
+- multi-line text blurbs, or
+- code blocks
 
 Indentation is used to indicate parent-child relationships.
 
-Line of whitespace are used to separate key-value attribute definitions from text blurbs, and to separate
+Lines of whitespace are used to separate key-value attribute definitions from text blurbs, and to separate
 text blurbs from one another.
 
 Here is a sample:
