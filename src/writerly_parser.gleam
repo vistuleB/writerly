@@ -1,6 +1,7 @@
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import simplifile
@@ -11,6 +12,10 @@ import simplifile
 
 pub type Blame {
   Blame(filename: String, line_no: Int, comments: List(String))
+}
+
+pub type BlamedLine {
+  BlamedLine(blame: Blame, indent: Int, suffix: String)
 }
 
 pub type BlamedContent {
@@ -47,9 +52,8 @@ pub type WriterlyParseError {
 // * local types *
 // ***************
 
-type FileRemaining {
-  FileRemaining(filename: String, line_no: Int, lines: List(String))
-}
+type FileHead =
+  List(BlamedLine)
 
 type BadTagName {
   EmptyTag
@@ -75,8 +79,8 @@ type TentativeBlamedAttribute {
 }
 
 type ClosingBackTicksError {
-  UndesiredAnnotation(FileRemaining)
-  NoBackticksFound(FileRemaining)
+  UndesiredAnnotation(Int, FileHead)
+  NoBackticksFound(FileHead)
 }
 
 type NonemptySuffixDiagnostic {
@@ -105,7 +109,31 @@ type TentativeWriterly {
   TentativeErrorNoCodeBlockClosing(blame: Blame)
 }
 
+// *************
+// * constants *
+// *************
+
 const ins = string.inspect
+
+// ************
+// * FileHead *
+// ************
+
+fn current_line(head: FileHead) -> Option(BlamedLine) {
+  case head {
+    [] -> None
+    [first, ..] -> Some(first)
+  }
+}
+
+fn move_forward(head: FileHead) -> FileHead {
+  let assert [_, ..rest] = head
+  rest
+}
+
+// ************************
+// * parse_from_tentative *
+// ************************
 
 fn tentative_blamed_attribute_to_blamed_attribute(
   t: TentativeBlamedAttribute,
@@ -238,38 +266,19 @@ fn nonempty_suffix_diagnostic(suffix: String) -> NonemptySuffixDiagnostic {
   }
 }
 
-fn line_indent(line: String) -> Int {
-  string.length(line) - string.length(string.trim_left(line))
-}
-
-fn increment_line_number(
-  in: FileRemaining,
-  new_lines: List(String),
-) -> FileRemaining {
-  let assert True = list.length(new_lines) + 1 == list.length(in.lines)
-  FileRemaining(
-    filename: in.filename,
-    line_no: in.line_no + 1,
-    lines: new_lines,
-  )
-}
-
 fn fast_forward_past_lines_of_indent_at_least(
   indent: Int,
-  remaining: FileRemaining,
-) -> FileRemaining {
-  case remaining.lines {
-    [] -> remaining
+  head: FileHead,
+) -> FileHead {
+  case current_line(head) {
+    None -> head
 
-    [first, ..rest] ->
-      case line_indent(first) < indent {
-        True -> remaining
+    Some(BlamedLine(_, suffix_indent, _)) ->
+      case suffix_indent < indent {
+        True -> head
 
         False ->
-          fast_forward_past_lines_of_indent_at_least(
-            indent,
-            increment_line_number(remaining, rest),
-          )
+          fast_forward_past_lines_of_indent_at_least(indent, move_forward(head))
       }
   }
 }
@@ -297,48 +306,42 @@ fn tentative_blamed_attribute(
 
 fn fast_forward_past_attribute_lines_at_indent(
   indent: Int,
-  remaining: FileRemaining,
-) -> #(List(TentativeBlamedAttribute), FileRemaining) {
-  case remaining.lines {
-    [] -> #([], remaining)
-    [first, ..rest] -> {
-      let suffix = string.trim_left(first)
+  head: FileHead,
+) -> #(List(TentativeBlamedAttribute), FileHead) {
+  case current_line(head) {
+    None -> #([], head)
 
+    Some(BlamedLine(blame, suffix_indent, suffix)) -> {
       case suffix == "" {
-        True -> #([], increment_line_number(remaining, rest))
+        True -> #([], move_forward(head))
 
         False -> {
-          let first_indent = string.length(first) - string.length(suffix)
-          case first_indent != indent {
-            True -> #([], remaining)
+          case suffix_indent != indent {
+            True -> #([], head)
+
             False ->
               case
                 string.starts_with(suffix, "|>")
                 || string.starts_with(suffix, "```")
               {
-                True -> #([], remaining)
+                True -> #([], head)
 
                 False -> {
                   let attribute_pair =
                     suffix
                     |> string.split_once(" ")
                     |> result.unwrap(#(suffix, ""))
+                    |> tentative_blamed_attribute(blame, _)
 
-                  let #(more_attribute_pairs, remaining_after_attributes) =
+                  let #(more_attribute_pairs, head_after_attributes) =
                     fast_forward_past_attribute_lines_at_indent(
                       indent,
-                      increment_line_number(remaining, rest),
+                      move_forward(head),
                     )
 
                   #(
-                    list.prepend(
-                      more_attribute_pairs,
-                      tentative_blamed_attribute(
-                        blame_from(remaining),
-                        attribute_pair,
-                      ),
-                    ),
-                    remaining_after_attributes,
+                    list.prepend(more_attribute_pairs, attribute_pair),
+                    head_after_attributes,
                   )
                 }
               }
@@ -351,36 +354,39 @@ fn fast_forward_past_attribute_lines_at_indent(
 
 fn fast_forward_past_other_lines_at_indent(
   indent: Int,
-  remaining: FileRemaining,
-) -> #(List(String), FileRemaining) {
-  case remaining.lines {
-    [] -> #([], remaining)
-    [first, ..rest] -> {
-      let suffix = string.trim_left(first)
+  head: FileHead,
+) -> #(List(BlamedContent), FileHead) {
+  case current_line(head) {
+    None -> #([], head)
 
+    Some(BlamedLine(blame, suffix_indent, suffix)) -> {
       case suffix == "" {
-        True -> #([], remaining)
-        False -> {
-          let first_indent = string.length(first) - string.length(suffix)
+        True -> #([], head)
 
-          case first_indent != indent {
-            True -> #([], remaining)
+        False -> {
+          case suffix_indent != indent {
+            True -> #([], head)
 
             False ->
               case
                 string.starts_with(suffix, "|>")
                 || string.starts_with(suffix, "```")
               {
-                True -> #([], remaining)
+                True -> #([], head)
 
                 False -> {
-                  let #(more_others, remaining_after_others) =
+                  let blamed_content = BlamedContent(blame, suffix)
+
+                  let #(more_blamed_contents, head_after_others) =
                     fast_forward_past_other_lines_at_indent(
                       indent,
-                      increment_line_number(remaining, rest),
+                      move_forward(head),
                     )
 
-                  #(list.prepend(more_others, suffix), remaining_after_others)
+                  #(
+                    list.prepend(more_blamed_contents, blamed_content),
+                    head_after_others,
+                  )
                 }
               }
           }
@@ -392,28 +398,25 @@ fn fast_forward_past_other_lines_at_indent(
 
 fn fast_forward_to_closing_backticks(
   indent: Int,
-  remaining: FileRemaining,
-) -> Result(#(List(String), FileRemaining), ClosingBackTicksError) {
-  case remaining.lines {
-    [] -> Error(NoBackticksFound(remaining))
-    [first, ..rest] -> {
-      let suffix = string.trim_left(first)
+  head: FileHead,
+) -> Result(#(List(BlamedContent), FileHead), ClosingBackTicksError) {
+  case current_line(head) {
+    None -> Error(NoBackticksFound(head))
 
+    Some(BlamedLine(blame, suffix_indent, suffix)) -> {
       case suffix == "" {
         True ->
-          case
-            fast_forward_to_closing_backticks(
-              indent,
-              increment_line_number(remaining, rest),
-            )
-          {
-            Ok(#(lines, remaining_after_closing_backticks)) -> {
-              let added_line =
-                string.repeat(" ", int.max(0, string.length(first) - indent))
+          case fast_forward_to_closing_backticks(indent, move_forward(head)) {
+            Ok(#(blamed_contents, head_after_closing_backticks)) -> {
+              let blamed_content =
+                BlamedContent(
+                  blame,
+                  string.repeat(" ", int.max(0, suffix_indent - indent)),
+                )
 
               Ok(#(
-                list.prepend(lines, added_line),
-                remaining_after_closing_backticks,
+                list.prepend(blamed_contents, blamed_content),
+                head_after_closing_backticks,
               ))
             }
 
@@ -421,29 +424,31 @@ fn fast_forward_to_closing_backticks(
           }
 
         False -> {
-          let first_indent = string.length(first) - string.length(suffix)
-
-          case first_indent < indent {
-            True -> Error(NoBackticksFound(remaining))
+          case suffix_indent < indent {
+            True -> Error(NoBackticksFound(head))
 
             False -> {
-              let padded_suffix_length = string.length(first) - indent
+              let padded_suffix_length =
+                suffix_indent + string.length(suffix) - indent
               let assert True = padded_suffix_length >= string.length(suffix)
               let padded_suffix =
                 string.pad_left(suffix, to: padded_suffix_length, with: " ")
+              let blamed_content = BlamedContent(blame, padded_suffix)
 
-              case first_indent > indent || !string.starts_with(suffix, "```") {
+              case
+                suffix_indent > indent || !string.starts_with(suffix, "```")
+              {
                 True ->
                   case
                     fast_forward_to_closing_backticks(
                       indent,
-                      increment_line_number(remaining, rest),
+                      move_forward(head),
                     )
                   {
-                    Ok(#(lines, remaining_after_closing_backticks)) ->
+                    Ok(#(blamed_contents, head_after_closing_backticks)) ->
                       Ok(#(
-                        list.prepend(lines, padded_suffix),
-                        remaining_after_closing_backticks,
+                        list.prepend(blamed_contents, blamed_content),
+                        head_after_closing_backticks,
                       ))
 
                     error -> error
@@ -451,18 +456,17 @@ fn fast_forward_to_closing_backticks(
 
                 False -> {
                   let assert True = string.starts_with(suffix, "```")
-                  let assert True = first_indent == indent
+                  let assert True = suffix_indent == indent
                   let annotation = string.drop_left(suffix, 3) |> string.trim
 
                   case string.is_empty(annotation) {
-                    True -> Ok(#([], increment_line_number(remaining, rest)))
+                    True -> Ok(#([], move_forward(head)))
+
                     False ->
-                      Error(
-                        UndesiredAnnotation(increment_line_number(
-                          remaining,
-                          rest,
-                        )),
-                      )
+                      Error(UndesiredAnnotation(
+                        blame.line_no,
+                        move_forward(head),
+                      ))
                   }
                 }
               }
@@ -499,59 +503,20 @@ fn check_good_tag_name(proposed_name) -> TentativeTagName {
   }
 }
 
-fn blame_from(remaining: FileRemaining) -> Blame {
-  Blame(filename: remaining.filename, line_no: remaining.line_no, comments: [])
-}
-
-fn increment_positive_line_no(blame: Blame) -> Blame {
-  case blame.line_no > 0 {
-    True ->
-      Blame(
-        filename: blame.filename,
-        line_no: blame.line_no + 1,
-        comments: blame.comments,
-      )
-    False ->
-      Blame(
-        filename: blame.filename,
-        line_no: blame.line_no,
-        comments: blame.comments,
-      )
-  }
-}
-
-fn contents_to_blamed_contents(
-  blame: Blame,
-  contents: List(String),
-) -> List(BlamedContent) {
-  case contents {
-    [] -> []
-    [first, ..rest] -> {
-      let next_blame = increment_positive_line_no(blame)
-      list.prepend(
-        contents_to_blamed_contents(next_blame, rest),
-        BlamedContent(blame: blame, content: first),
-      )
-    }
-  }
-}
-
-fn tentative_parse(
+fn tentative_parse_at_indent(
   indent: Int,
-  remaining: FileRemaining,
-) -> #(List(TentativeWriterly), FileRemaining) {
-  case remaining.lines {
-    [] -> #([], remaining)
+  head: FileHead,
+) -> #(List(TentativeWriterly), FileHead) {
+  case current_line(head) {
+    None -> #([], head)
 
-    [line, ..rest] -> {
-      let suffix = string.trim_left(line)
-
+    Some(BlamedLine(blame, suffix_indent, suffix)) -> {
       case suffix == "" {
         True -> {
           let #(siblings, remainder_after_indent) =
-            tentative_parse(indent, increment_line_number(remaining, rest))
+            tentative_parse_at_indent(indent, move_forward(head))
 
-          let tentative_blank_line = TentativeBlankLine(blame_from(remaining))
+          let tentative_blank_line = TentativeBlankLine(blame)
 
           #(
             list.prepend(siblings, tentative_blank_line),
@@ -560,83 +525,90 @@ fn tentative_parse(
         }
 
         False -> {
-          let line_indent = string.length(line) - string.length(suffix)
+          case suffix_indent < indent {
+            True -> {
+              case suffix_indent > indent - 4 {
+                True -> {
+                  let error = TentativeErrorIndentationNotMultipleOfFour(blame)
 
-          case line_indent < indent {
-            True -> #([], remaining)
+                  let #(siblings, head_after_indent) =
+                    tentative_parse_at_indent(indent, move_forward(head))
+
+                  #(list.prepend(siblings, error), head_after_indent)
+                }
+
+                False -> #([], head)
+              }
+            }
 
             False ->
-              case line_indent > indent {
+              case suffix_indent > indent {
                 True -> {
-                  let remaining_after_oversize_indent =
+                  let head_after_oversize_indent =
                     fast_forward_past_lines_of_indent_at_least(
-                      line_indent,
-                      remaining,
+                      suffix_indent,
+                      head,
                     )
 
-                  let #(siblings, remaining_after_indent) =
-                    tentative_parse(indent, remaining_after_oversize_indent)
+                  let #(siblings, head_after_indent) =
+                    tentative_parse_at_indent(
+                      indent,
+                      head_after_oversize_indent,
+                    )
 
-                  case line_indent % 4 == 0 {
+                  case suffix_indent % 4 == 0 {
                     True -> {
                       let error_message =
                         "indent too large "
-                        <> ins(line_indent)
+                        <> ins(suffix_indent)
                         <> " > "
                         <> ins(indent)
 
-                      #(
-                        list.prepend(
-                          siblings,
-                          TentativeErrorIndentationTooLarge(
-                            blame_from(remaining),
-                            error_message,
-                          ),
-                        ),
-                        remaining_after_indent,
-                      )
+                      let error =
+                        TentativeErrorIndentationTooLarge(blame, error_message)
+
+                      #(list.prepend(siblings, error), head_after_indent)
                     }
 
-                    False -> #(
-                      list.prepend(
-                        siblings,
-                        TentativeErrorIndentationNotMultipleOfFour(blame_from(
-                          remaining,
-                        )),
-                      ),
-                      remaining_after_indent,
-                    )
+                    False -> {
+                      let error =
+                        TentativeErrorIndentationNotMultipleOfFour(blame)
+                      #(list.prepend(siblings, error), head_after_indent)
+                    }
                   }
                 }
 
                 False -> {
-                  let assert True = line_indent == indent
+                  let assert True = suffix_indent == indent
 
                   case nonempty_suffix_diagnostic(suffix) {
                     Pipe(annotation) -> {
-                      let #(tentative_attributes, remaining_after_attributes) =
+                      let #(tentative_attributes, head_after_attributes) =
                         fast_forward_past_attribute_lines_at_indent(
                           indent + 4,
-                          increment_line_number(remaining, rest),
+                          move_forward(head),
                         )
 
-                      let #(children, remaining_after_children) =
-                        tentative_parse(indent + 4, remaining_after_attributes)
+                      let #(children, head_after_children) =
+                        tentative_parse_at_indent(
+                          indent + 4,
+                          head_after_attributes,
+                        )
 
                       let tentative_tag =
                         TentativeTag(
-                          blame: blame_from(remaining),
+                          blame: blame,
                           tag: check_good_tag_name(string.trim(annotation)),
                           attributes: tentative_attributes,
                           children: children,
                         )
 
-                      let #(siblings, remaining_after_indent) =
-                        tentative_parse(indent, remaining_after_children)
+                      let #(siblings, head_after_indent) =
+                        tentative_parse_at_indent(indent, head_after_children)
 
                       #(
                         list.prepend(siblings, tentative_tag),
-                        remaining_after_indent,
+                        head_after_indent,
                       )
                     }
 
@@ -644,92 +616,90 @@ fn tentative_parse(
                       case
                         fast_forward_to_closing_backticks(
                           indent,
-                          increment_line_number(remaining, rest),
+                          move_forward(head),
                         )
                       {
-                        Ok(#(lines, remaining_after_code_block)) -> {
-                          let blame = blame_from(remaining)
+                        Ok(#(contents, head_after_code_block)) -> {
+                          let blame = blame
 
                           let tentative_code_block =
                             TentativeCodeBlock(
                               blame: blame,
                               annotation: annotation,
-                              contents: contents_to_blamed_contents(
-                                blame,
-                                lines,
-                              ),
+                              contents: contents,
                             )
 
-                          let #(siblings, remaining_after_indent) =
-                            tentative_parse(indent, remaining_after_code_block)
+                          let #(siblings, head_after_indent) =
+                            tentative_parse_at_indent(
+                              indent,
+                              head_after_code_block,
+                            )
 
                           #(
                             list.prepend(siblings, tentative_code_block),
-                            remaining_after_indent,
+                            head_after_indent,
                           )
                         }
 
-                        Error(UndesiredAnnotation(remaining_after_error)) -> {
+                        Error(UndesiredAnnotation(
+                          error_line_number,
+                          head_after_error,
+                        )) -> {
                           let error_message =
-                            "closing backticks for backticks opened at L"
-                            <> ins(remaining.line_no)
+                            "closing backticks on L"
+                            <> ins(error_line_number)
+                            <> " for backticks opened at L"
+                            <> ins(blame.line_no)
                             <> " carry unexpected annotation"
 
                           let tentative_error =
                             TentativeErrorCodeBlockAnnotation(
-                              blame: blame_from(remaining),
-                              message: error_message,
+                              blame,
+                              error_message,
                             )
 
-                          let #(siblings, remaining_after_indent) =
-                            tentative_parse(indent, remaining_after_error)
+                          let #(siblings, head_after_indent) =
+                            tentative_parse_at_indent(indent, head_after_error)
 
                           #(
                             list.prepend(siblings, tentative_error),
-                            remaining_after_indent,
+                            head_after_indent,
                           )
                         }
 
-                        Error(NoBackticksFound(remaining_after_indent)) -> {
+                        Error(NoBackticksFound(head_after_indent)) -> {
                           let tentative_error =
-                            TentativeErrorNoCodeBlockClosing(blame: blame_from(
-                              remaining,
-                            ))
+                            TentativeErrorNoCodeBlockClosing(blame)
 
-                          #([tentative_error], remaining_after_indent)
+                          #([tentative_error], head_after_indent)
                         }
                       }
 
                     Other(_) -> {
-                      let #(more_others, remaining_after_others) =
+                      let blame = blame
+                      let blamed_content = BlamedContent(blame, suffix)
+
+                      let #(more_blamed_contents, head_after_others) =
                         fast_forward_past_other_lines_at_indent(
                           indent,
-                          increment_line_number(remaining, rest),
+                          move_forward(head),
                         )
 
-                      let padded_suffix_length = string.length(line) - indent
-                      let assert True =
-                        padded_suffix_length >= string.length(suffix)
-                      let padded_suffix =
-                        string.pad_left(
-                          suffix,
-                          to: padded_suffix_length,
-                          with: " ",
-                        )
-
-                      let blame = blame_from(remaining)
-                      let contents =
-                        list.prepend(more_others, padded_suffix)
-                        |> contents_to_blamed_contents(blame, _)
                       let tentative_blurb =
-                        TentativeBlurb(blame: blame, contents: contents)
+                        TentativeBlurb(
+                          blame: blame,
+                          contents: list.prepend(
+                            more_blamed_contents,
+                            blamed_content,
+                          ),
+                        )
 
-                      let #(siblings, remaining_after_indent) =
-                        tentative_parse(indent, remaining_after_others)
+                      let #(siblings, head_after_indent) =
+                        tentative_parse_at_indent(indent, head_after_others)
 
                       #(
                         list.prepend(siblings, tentative_blurb),
-                        remaining_after_indent,
+                        head_after_indent,
                       )
                     }
                   }
@@ -742,13 +712,67 @@ fn tentative_parse(
   }
 }
 
-fn tentative_parse_at_indent_0(
-  remaining: FileRemaining,
-) -> List(TentativeWriterly) {
-  let #(parsed, remaining_beyond_parsed) = tentative_parse(0, remaining)
-  let assert True = list.is_empty(remaining_beyond_parsed.lines)
+fn add_blames(
+  filename: String,
+  current_line_no: Int,
+  pairs: List(#(Int, String)),
+) -> List(BlamedLine) {
+  case pairs {
+    [] -> []
+    [#(indent, suffix), ..rest] -> {
+      let blamed_first =
+        BlamedLine(Blame(filename, current_line_no, []), indent, suffix)
+      list.prepend(
+        add_blames(filename, current_line_no + 1, rest),
+        blamed_first,
+      )
+    }
+  }
+}
+
+fn string_to_blamed_lines(
+  source: String,
+  filename: String,
+  starting_line_number: Int,
+) -> List(BlamedLine) {
+  string.split(source, "\n")
+  |> list.map(fn(line) {
+    let suffix = string.trim_left(line)
+    let indent = string.length(line) - string.length(suffix)
+    #(indent, suffix)
+  })
+  |> add_blames(filename, starting_line_number, _)
+}
+
+fn tentative_parse_at_indent_0(head: FileHead) -> List(TentativeWriterly) {
+  let #(parsed, final_head) = tentative_parse_at_indent(0, head)
+  let assert True = list.is_empty(final_head)
   parsed
 }
+
+fn tentative_parse_string(
+  source: String,
+  filename: String,
+) -> List(TentativeWriterly) {
+  let head = string_to_blamed_lines(source, filename, 1)
+  let parsed = tentative_parse_at_indent_0(head)
+  io.println("\n\n(tentative parse:)")
+  pretty_print_tentatives("(tentative)", "", parsed)
+  io.println("(tentative end)\n\n")
+  parsed
+}
+
+pub fn parse_string(
+  source: String,
+  filename: String,
+) -> Result(List(Writerly), WriterlyParseError) {
+  tentative_parse_string(source, filename)
+  |> parse_from_tentatives
+}
+
+//************
+//* printing *
+//************
 
 const margin_line_number_pad_to = 6
 
@@ -776,13 +800,15 @@ fn margin_suppress_blame_assembler(
   announce: String,
   margin: String,
 ) -> String {
-  let would_be_blame =
+  let takes_place_of_blame =
     blame.filename
     <> ":"
     <> string.pad_right(ins(blame.line_no), margin_line_number_pad_to, " ")
+    |> string.length
+    |> string.repeat(" ", _)
 
   prefix
-  <> string.repeat(" ", times: string.length(would_be_blame))
+  <> takes_place_of_blame
   <> " "
   <> string.pad_right(announce, margin_announce_pad_to, " ")
   <> "."
@@ -1020,38 +1046,19 @@ pub fn pretty_print_writerlys(
   }
 }
 
-fn tentative_parse_string(
-  source: String,
-  source_name: String,
-  starting_line_number: Int,
-) -> List(TentativeWriterly) {
-  let lines = string.split(source, "\n")
-  let remaining = FileRemaining(source_name, starting_line_number, lines)
-  let parsed = tentative_parse_at_indent_0(remaining)
-  // io.println("\n\n(tentative parse:)")
-  // pretty_print_tentatives("(tentative)", "", parsed)
-  // io.println("(tentative end)\n\n")
-  parsed
-}
-
-pub fn parse_string(
-  source: String,
-  source_name: String,
-  starting_line_number: Int,
-) -> Result(List(Writerly), WriterlyParseError) {
-  tentative_parse_string(source, source_name, starting_line_number)
-  |> parse_from_tentatives
-}
-
 pub fn main() {
-  let filename = "sample.emu"
+  let filename = "src/sample.emu"
 
   case simplifile.read(filename) {
     Error(e) -> io.println("Error reading " <> filename <> ": " <> ins(e))
 
     Ok(file) -> {
-      case parse_string(file, filename, 1) {
-        Ok(writerlys) -> pretty_print_writerlys("(writerlys)", "", writerlys)
+      case parse_string(file, filename) {
+        Ok(writerlys) -> {
+          io.println("\n\n(writerlys parse:)")
+          pretty_print_writerlys("(writerlys)", "", writerlys)
+          io.println("(writerlys end)\n\n")
+        }
 
         Error(error) -> {
           io.println("\nthere was a parsing error:")
