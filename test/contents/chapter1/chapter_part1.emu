@@ -1,0 +1,10 @@
+|> Section
+
+    Paragraph 1.
+
+    |> Example
+
+        Hello.
+
+    |> Image
+        attr1 val1
