@@ -2,9 +2,9 @@ import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/pair
 import gleam/result
 import gleam/string
-import gleam/pair
 import simplifile.{type FileError}
 
 // ****************
@@ -531,11 +531,13 @@ fn tentative_parse_at_indent(
               case suffix_indent > indent - 4 {
                 True -> {
                   let error_message =
-                    ins(suffix_indent)
-                    <> " spaces before "
-                    <> ins(suffix)
+                    ins(suffix_indent) <> " spaces before " <> ins(suffix)
 
-                  let error = TentativeErrorIndentationNotMultipleOfFour(blame, error_message)
+                  let error =
+                    TentativeErrorIndentationNotMultipleOfFour(
+                      blame,
+                      error_message,
+                    )
 
                   let #(siblings, head_after_indent) =
                     tentative_parse_at_indent(indent, move_forward(head))
@@ -578,12 +580,13 @@ fn tentative_parse_at_indent(
 
                     False -> {
                       let error_message =
-                        ins(suffix_indent)
-                        <> " spaces before "
-                        <> ins(suffix)
+                        ins(suffix_indent) <> " spaces before " <> ins(suffix)
 
                       let error =
-                        TentativeErrorIndentationNotMultipleOfFour(blame, error_message)
+                        TentativeErrorIndentationNotMultipleOfFour(
+                          blame,
+                          error_message,
+                        )
                       #(list.prepend(siblings, error), head_after_indent)
                     }
                   }
@@ -728,20 +731,22 @@ fn tentative_parse_at_indent(
 //************************
 
 fn add_blames_map_fold(
-  current_info: #(Int, String), // line_number, filename
-  current_line: #(Int, String), // indent, suffix
+  current_info: #(Int, String),
+  // line_number, filename
+  current_line: #(Int, String),
+  // indent, suffix
 ) -> #(#(Int, String), BlamedLine) {
   let #(line_number, filename) = current_info
   let #(indent, suffix) = current_line
   #(
     #(line_number + 1, filename),
-    BlamedLine(Blame(filename, line_number, []), indent, suffix)
+    BlamedLine(Blame(filename, line_number, []), indent, suffix),
   )
 }
 
 fn add_blames(
   pairs: List(#(Int, String)),
-  proto_blame: #(Int, String)
+  proto_blame: #(Int, String),
 ) -> List(BlamedLine) {
   list.map_fold(pairs, proto_blame, add_blames_map_fold)
   |> pair.second
@@ -774,7 +779,9 @@ fn tentative_parse_blamed_lines(head: FileHead) -> List(TentativeWriterly) {
   parsed
 }
 
-fn tentative_parse_blamed_lines_with_debug_print(head: FileHead) -> List(TentativeWriterly) {
+fn tentative_parse_blamed_lines_with_debug_print(
+  head: FileHead,
+) -> List(TentativeWriterly) {
   let #(parsed, final_head) = tentative_parse_at_indent(0, head)
   let assert True = list.is_empty(final_head)
 
@@ -811,14 +818,16 @@ fn tentative_parse_string_with_debug_print(
 
 fn parse_blamed_lines(lines) -> Result(List(Writerly), WriterlyParseError) {
   lines
-    |> tentative_parse_blamed_lines
-    |> parse_from_tentatives
+  |> tentative_parse_blamed_lines
+  |> parse_from_tentatives
 }
 
-fn parse_blamed_lines_with_debug_print(lines) -> Result(List(Writerly), WriterlyParseError) {
+fn parse_blamed_lines_with_debug_print(
+  lines,
+) -> Result(List(Writerly), WriterlyParseError) {
   lines
-    |> tentative_parse_blamed_lines_with_debug_print
-    |> parse_from_tentatives
+  |> tentative_parse_blamed_lines_with_debug_print
+  |> parse_from_tentatives
 }
 
 //*********************************
@@ -846,7 +855,9 @@ pub fn parse_string_with_debug_print(
 //************
 
 const pre_announce_pad_to = 60
+
 const margin_announce_pad_to = 30
+
 const debug_print_spaces = "    "
 
 fn margin_assembler(
@@ -856,10 +867,7 @@ fn margin_assembler(
   margin: String,
 ) -> String {
   let up_to_line_number =
-    pre_blame
-    <> blame.filename
-    <> ":"
-    <> ins(blame.line_no)
+    pre_blame <> blame.filename <> ":" <> ins(blame.line_no)
 
   string.pad_right(up_to_line_number, pre_announce_pad_to, " ")
   <> string.pad_right(announce, margin_announce_pad_to, " ")
@@ -883,13 +891,9 @@ fn margin_error_assembler(
   error_message: String,
 ) -> String {
   let up_to_line_number =
-    pre_blame
-    <> blame.filename
-    <> ":"
-    <> ins(blame.line_no)
+    pre_blame <> blame.filename <> ":" <> ins(blame.line_no)
 
-  string.pad_right(up_to_line_number, pre_announce_pad_to, " ")
-  <> error_message
+  string.pad_right(up_to_line_number, pre_announce_pad_to, " ") <> error_message
 }
 
 fn map_with_special_first(
@@ -970,7 +974,7 @@ fn debug_print_tentative_internal(
         margin_assembler(pre_blame, blame, "TAG", indentation)
         <> "|>"
         <> " "
-        <> ins(tag_name)
+        <> ins(tag_name),
       )
 
       list.map(tentative_blamed_attributes, fn(t) -> Nil {
@@ -1015,7 +1019,11 @@ fn debug_print_tentative_internal(
       |> io.println
 
     TentativeErrorIndentationNotMultipleOfFour(blame, message) ->
-      margin_error_assembler(pre_blame, blame, "INDENTATION ERROR (!MULT 4): " <> message)
+      margin_error_assembler(
+        pre_blame,
+        blame,
+        "INDENTATION ERROR (!MULT 4): " <> message,
+      )
       |> io.println
 
     TentativeErrorNoCodeBlockClosing(blame) ->
@@ -1051,7 +1059,7 @@ fn debug_print_tentatives_internal(
 }
 
 //*************************************
-//* debug printing Writerly as itself *
+//* debug printing writerly as itself *
 //*************************************
 
 pub fn debug_print_writerly_internal(
@@ -1329,7 +1337,7 @@ fn file_is_not_commented(path: String) -> Bool {
   !{ string.contains(path, "/#") || string.starts_with(path, "#") }
 }
 
-fn file_directory_depth(path: String, dirname: String) -> #(Int, String) {
+fn add_directory_depth(path: String, dirname: String) -> #(Int, String) {
   #(
     {
       path
@@ -1342,51 +1350,44 @@ fn file_directory_depth(path: String, dirname: String) -> #(Int, String) {
   )
 }
 
-fn files_for_parsing_with_directory_depths(
-  dirname: String,
-) -> Result(List(#(Int, String)), FileError) {
-  case simplifile.get_files(dirname) {
-    Ok(files) -> {
-      files
-      |> list.sort(string.compare)
-      |> list.filter(file_is_not_commented)
-      |> list.map(file_directory_depth(_, dirname))
-      |> Ok
-    }
-    Error(error) -> Error(error)
-  }
-}
-
-fn file_at_depth_to_blamed_lines(
+fn blamed_lines_for_file_at_depth(
   pair: #(Int, String),
   dirname: String,
 ) -> Result(List(BlamedLine), FileError) {
   let #(depth, filename) = pair
-  let length_to_drop =
-    case dirname == "" {
-      True -> 0
-      False -> string.length(dirname) + 1
-    }
+  let length_to_drop = case dirname == "" {
+    True -> 0
+    False -> string.length(dirname) + 1
+  }
   let shortened_filename_for_blame = string.drop_left(filename, length_to_drop)
-  
+
   case simplifile.read(filename) {
-    Ok(string) -> Ok(string_to_blamed_lines(depth * 4, string, shortened_filename_for_blame, 1))
+    Ok(string) ->
+      Ok(string_to_blamed_lines(
+        depth * 4,
+        string,
+        shortened_filename_for_blame,
+        1,
+      ))
     Error(error) -> Error(error)
   }
 }
 
-fn list_files_with_depth_to_list_blamed_line(
-  pairs: List(#(Int, String)),
+fn concatenated_files_blamed_lines(
   dirname: String,
 ) -> Result(List(BlamedLine), FileError) {
-  list.map(pairs, file_at_depth_to_blamed_lines(_, dirname))
-  |> result.all
-  |> result.map(list.concat)
-}
-
-fn concatenated_files_blamed_lines(dirname: String) -> Result(List(BlamedLine), FileError) {
-  files_for_parsing_with_directory_depths(dirname)
-  |> result.then(list_files_with_depth_to_list_blamed_line(_, dirname))
+  case simplifile.get_files(dirname) {
+    Ok(files) -> {
+      files
+      |> list.filter(file_is_not_commented)
+      |> list.sort(string.compare)
+      |> list.map(add_directory_depth(_, dirname))
+      |> list.map(blamed_lines_for_file_at_depth(_, dirname))
+      |> result.all
+      |> result.map(list.concat)
+    }
+    Error(error) -> Error(error)
+  }
 }
 
 fn contents_test() {
@@ -1422,7 +1423,7 @@ fn sample_test() {
     Ok(file) -> {
       case parse_string(file, filename) {
         Ok(writerlys) -> {
-          debug_print_vxmls("(writerlys)", writerlys |> writerlys_to_vxmls)
+          debug_print_vxmls("(vxmls)", writerlys |> writerlys_to_vxmls)
         }
 
         Error(error) -> {
