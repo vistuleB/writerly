@@ -1399,6 +1399,9 @@ fn contents_test() {
         Ok(writerlys) -> {
           debug_print_writerlys("(debug_print_writerlys)", writerlys)
           io.println("")
+          io.println("")
+          debug_print_vxmls("(vxmls)", writerlys |> writerlys_to_vxmls)
+          io.println("")
         }
 
         Error(error) -> {
@@ -1438,5 +1441,9 @@ fn sample_test() {
 }
 
 pub fn main() {
-  contents_test()
+  let test_content = True
+  case test_content {
+    True -> contents_test()
+    False -> sample_test()
+  }
 }
