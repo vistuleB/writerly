@@ -44,7 +44,7 @@ pub type WriterlyParseError {
   WriterlyParseErrorIllegalTagCharacter(Blame, String, String)
   WriterlyParseErrorIllegalAttributeKeyCharacter(Blame, String, String)
   WriterlyParseErrorIndentationTooLarge(Blame, String)
-  WriterlyParseErrorIndentationNotMultipleOfFour(Blame)
+  WriterlyParseErrorIndentationNotMultipleOfFour(Blame, String)
   WriterlyParseErrorCodeBlockClosingUnwantedAnnotation(Blame)
   WriterlyParseErrorCodeBlockClosingMissing(Blame)
 }
@@ -199,7 +199,7 @@ fn parse_from_tentative(
       Error(WriterlyParseErrorIndentationTooLarge(blame, message))
 
     TentativeErrorIndentationNotMultipleOfFour(blame, message) ->
-      Error(WriterlyParseErrorIndentationNotMultipleOfFour(blame))
+      Error(WriterlyParseErrorIndentationNotMultipleOfFour(blame, message))
 
     TentativeErrorNoCodeBlockClosing(blame) ->
       Error(WriterlyParseErrorCodeBlockClosingMissing(blame))
@@ -773,21 +773,21 @@ fn string_to_blamed_lines(
 //* tentative parsing api (blamed lines) *
 //****************************************
 
-fn tentative_parse_blamed_lines(head: FileHead) -> List(TentativeWriterly) {
-  let #(parsed, final_head) = tentative_parse_at_indent(0, head)
-  let assert True = list.is_empty(final_head)
-  parsed
-}
-
-fn tentative_parse_blamed_lines_with_debug_print(
+fn tentative_parse_blamed_lines(
   head: FileHead,
+  debug_messages: Bool,
 ) -> List(TentativeWriterly) {
   let #(parsed, final_head) = tentative_parse_at_indent(0, head)
   let assert True = list.is_empty(final_head)
 
-  io.println("\n\n(tentative parse:)")
-  debug_print_tentatives_internal("(tentative)", "", parsed)
-  io.println("(tentative end)\n\n")
+  case debug_messages {
+    True -> {
+      io.println("\n\n(tentative parse:)")
+      debug_print_tentatives_internal("(tentative)", "", parsed)
+      io.println("(tentative end)\n\n")
+    }
+    False -> Nil
+  }
 
   parsed
 }
@@ -799,34 +799,22 @@ fn tentative_parse_blamed_lines_with_debug_print(
 fn tentative_parse_string(
   source: String,
   filename: String,
+  debug_messages: Bool,
 ) -> List(TentativeWriterly) {
   string_to_blamed_lines(0, source, filename, 1)
-  |> tentative_parse_blamed_lines
-}
-
-fn tentative_parse_string_with_debug_print(
-  source: String,
-  filename: String,
-) -> List(TentativeWriterly) {
-  string_to_blamed_lines(0, source, filename, 1)
-  |> tentative_parse_blamed_lines_with_debug_print
+  |> tentative_parse_blamed_lines(debug_messages)
 }
 
 //***************************************
 //* writerly parsing api (blamed lines) *
 //***************************************
 
-fn parse_blamed_lines(lines) -> Result(List(Writerly), WriterlyParseError) {
-  lines
-  |> tentative_parse_blamed_lines
-  |> parse_from_tentatives
-}
-
-fn parse_blamed_lines_with_debug_print(
-  lines,
+pub fn parse_blamed_lines(
+  lines: List(BlamedLine),
+  debug_messages: Bool,
 ) -> Result(List(Writerly), WriterlyParseError) {
   lines
-  |> tentative_parse_blamed_lines_with_debug_print
+  |> tentative_parse_blamed_lines(debug_messages)
   |> parse_from_tentatives
 }
 
@@ -837,16 +825,9 @@ fn parse_blamed_lines_with_debug_print(
 pub fn parse_string(
   source: String,
   filename: String,
+  debug_messages: Bool,
 ) -> Result(List(Writerly), WriterlyParseError) {
-  tentative_parse_string(source, filename)
-  |> parse_from_tentatives
-}
-
-pub fn parse_string_with_debug_print(
-  source: String,
-  filename: String,
-) -> Result(List(Writerly), WriterlyParseError) {
-  tentative_parse_string_with_debug_print(source, filename)
+  tentative_parse_string(source, filename, debug_messages)
   |> parse_from_tentatives
 }
 
@@ -877,8 +858,8 @@ fn margin_assembler(
 
 fn margin_suppress_blame_assembler(
   pre_blame: String,
-  blame: Blame,
-  debug_announcement: String,
+  _: Blame,
+  _: String,
 ) -> String {
   string.pad_right(pre_blame, pre_announce_pad_to, " ")
   <> string.pad_right("", margin_announce_pad_to, " ")
@@ -1373,7 +1354,7 @@ fn blamed_lines_for_file_at_depth(
   }
 }
 
-fn concatenated_files_blamed_lines(
+pub fn concatenated_files_blamed_lines(
   dirname: String,
 ) -> Result(List(BlamedLine), FileError) {
   case simplifile.get_files(dirname) {
@@ -1395,7 +1376,7 @@ fn contents_test() {
 
   case concatenated_files_blamed_lines(dirname) {
     Ok(lines) -> {
-      case parse_blamed_lines_with_debug_print(lines) {
+      case parse_blamed_lines(lines, True) {
         Ok(writerlys) -> {
           debug_print_writerlys("(debug_print_writerlys)", writerlys)
           io.println("")
@@ -1424,7 +1405,7 @@ fn sample_test() {
     Error(e) -> io.println("Error reading " <> filename <> ": " <> ins(e))
 
     Ok(file) -> {
-      case parse_string(file, filename) {
+      case parse_string(file, filename, True) {
         Ok(writerlys) -> {
           debug_print_vxmls("(vxmls)", writerlys |> writerlys_to_vxmls)
         }
