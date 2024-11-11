@@ -1043,7 +1043,7 @@ fn debug_print_tentatives_internal(
 //* debug printing writerly as itself *
 //*************************************
 
-pub fn debug_print_writerly_internal(
+fn debug_print_writerly_internal(
   pre_blame: String,
   indentation: String,
   t: Writerly,
@@ -1228,7 +1228,7 @@ pub fn writerly_to_vxml(t: Writerly) -> VXML {
   }
 }
 
-fn writerlys_to_vxmls(writerlys: List(Writerly)) -> List(VXML) {
+pub fn writerlys_to_vxmls(writerlys: List(Writerly)) -> List(VXML) {
   list.map(writerlys, writerly_to_vxml)
 }
 
@@ -1354,7 +1354,7 @@ fn blamed_lines_for_file_at_depth(
   }
 }
 
-pub fn concatenated_files_blamed_lines(
+pub fn assemble_blamed_lines(
   dirname: String,
 ) -> Result(List(BlamedLine), FileError) {
   case simplifile.get_files(dirname) {
@@ -1374,7 +1374,7 @@ pub fn concatenated_files_blamed_lines(
 fn contents_test() {
   let dirname = "test/contents"
 
-  case concatenated_files_blamed_lines(dirname) {
+  case assemble_blamed_lines(dirname) {
     Ok(lines) -> {
       case parse_blamed_lines(lines, True) {
         Ok(writerlys) -> {
