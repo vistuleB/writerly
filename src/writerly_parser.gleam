@@ -11,20 +11,9 @@ import simplifile.{type FileError}
 // * public types *
 // ****************
 
-pub type Blame {
-  Blame(filename: String, line_no: Int, comments: List(String))
-}
-
-pub type BlamedLine {
-  BlamedLine(blame: Blame, indent: Int, suffix: String)
-}
-
-pub type BlamedContent {
-  BlamedContent(blame: Blame, content: String)
-}
-
-pub type BlamedAttribute {
-  BlamedAttribute(blame: Blame, key: String, value: String)
+import vxml_parser.{
+  type Blame, type BlamedAttribute, type BlamedContent, type BlamedLine,
+  type VXML, Blame, BlamedAttribute, BlamedContent, BlamedLine, T, V,
 }
 
 pub type Writerly {
@@ -1169,16 +1158,6 @@ pub fn debug_print_writerlys(pre_blame: String, writerlys: List(Writerly)) {
 //*******************************
 //* converting Writerly to VXML *
 //*******************************
-
-pub type VXML {
-  V(
-    blame: Blame,
-    tag: String,
-    attributes: List(BlamedAttribute),
-    children: List(VXML),
-  )
-  T(blame: Blame, contents: List(BlamedContent))
-}
 
 const writerly_blank_line_vxml_tag = "WriterlyBlankLine"
 
