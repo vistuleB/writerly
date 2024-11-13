@@ -1,3 +1,4 @@
+import gleam/dynamic
 import gleam/int
 import gleam/io
 import gleam/list
@@ -1297,15 +1298,23 @@ fn file_is_not_commented(path: String) -> Bool {
   !{ string.contains(path, "/#") || string.starts_with(path, "#") }
 }
 
-fn add_directory_depth(path: String, dirname: String) -> #(Int, String) {
+fn depth_in_directory_tree(path: String, dirname: String) -> Int {
+  {
+    path
+    |> string.drop_left(string.length(dirname) + 1)
+    |> string.split("/")
+    |> list.length
+  }
+  - 1
+}
+
+fn add_tree_depth(path: String, dirname: String) -> #(Int, String) {
   #(
-    {
-      path
-      |> string.drop_left(string.length(dirname) + 1)
-      |> string.split("/")
-      |> list.length
-    }
-      - 1,
+    depth_in_directory_tree(path, dirname)
+      + case string.ends_with(path, "__parent.emu") {
+      True -> 0
+      False -> 1
+    },
     path,
   )
 }
@@ -1341,7 +1350,7 @@ pub fn assemble_blamed_lines(
       files
       |> list.filter(file_is_not_commented)
       |> list.sort(string.compare)
-      |> list.map(add_directory_depth(_, dirname))
+      |> list.map(add_tree_depth(_, dirname))
       |> list.map(blamed_lines_for_file_at_depth(_, dirname))
       |> result.all
       |> result.map(list.concat)
