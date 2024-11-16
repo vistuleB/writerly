@@ -1,4 +1,3 @@
-import gleam/dynamic
 import gleam/int
 import gleam/io
 import gleam/list
@@ -1298,6 +1297,16 @@ fn file_is_not_commented(path: String) -> Bool {
   !{ string.contains(path, "/#") || string.starts_with(path, "#") }
 }
 
+fn path_to_parent_file(path: String) -> String {
+  let pieces = {
+    string.split(path, "/") |> list.reverse
+  }
+  case pieces {
+    [] -> "wut?"
+    [_, ..rest] -> string.join(list.reverse(rest), "/") <> "/__parent.emu"
+  }
+}
+
 fn depth_in_directory_tree(path: String, dirname: String) -> Int {
   {
     path
@@ -1308,15 +1317,21 @@ fn depth_in_directory_tree(path: String, dirname: String) -> Int {
   - 1
 }
 
+fn zero_one(b: Bool) -> Int {
+  case b {
+    True -> 1
+    False -> 0
+  }
+}
+
 fn add_tree_depth(path: String, dirname: String) -> #(Int, String) {
-  #(
-    depth_in_directory_tree(path, dirname)
-      + case string.ends_with(path, "__parent.emu") {
-      True -> 0
-      False -> 1
-    },
-    path,
-  )
+  let base_depth = depth_in_directory_tree(path, dirname)
+  let would_be_parent_path = path_to_parent_file(path)
+  let must_add_1 = {
+    { simplifile.is_file(would_be_parent_path) |> result.unwrap(False) }
+    && path != would_be_parent_path
+  }
+  #(base_depth + zero_one(must_add_1), path)
 }
 
 fn blamed_lines_for_file_at_depth(
@@ -1342,10 +1357,18 @@ fn blamed_lines_for_file_at_depth(
   }
 }
 
+fn get_files(dirname: String) -> Result(List(String), FileError) {
+  case simplifile.get_files(dirname) {
+    Ok(files) -> Ok(files)
+    Error(simplifile.Enotdir) -> Ok([dirname])
+    Error(error) -> Error(error)
+  }
+}
+
 pub fn assemble_blamed_lines(
   dirname: String,
 ) -> Result(List(BlamedLine), FileError) {
-  case simplifile.get_files(dirname) {
+  case get_files(dirname) {
     Ok(files) -> {
       files
       |> list.filter(file_is_not_commented)
@@ -1387,7 +1410,7 @@ fn contents_test() {
 }
 
 fn sample_test() {
-  let filename = "test/sample.emu"
+  let filename = "test/contents"
 
   case simplifile.read(filename) {
     Error(e) -> io.println("Error reading " <> filename <> ": " <> ins(e))
