@@ -1357,10 +1357,10 @@ fn blamed_lines_for_file_at_depth(
   }
 }
 
-fn get_files(dirname: String) -> Result(List(String), FileError) {
+fn get_files(dirname: String) -> Result(#(Bool, List(String)), FileError) {
   case simplifile.get_files(dirname) {
-    Ok(files) -> Ok(files)
-    Error(simplifile.Enotdir) -> Ok([dirname])
+    Ok(files) -> Ok(#(True, files))
+    Error(simplifile.Enotdir) -> Ok(#(False, [dirname]))
     Error(error) -> Error(error)
   }
 }
@@ -1369,12 +1369,15 @@ pub fn assemble_blamed_lines(
   dirname: String,
 ) -> Result(List(BlamedLine), FileError) {
   case get_files(dirname) {
-    Ok(files) -> {
+    Ok(#(was_dir, files)) -> {
       files
       |> list.filter(file_is_not_commented)
       |> list.sort(string.compare)
       |> list.map(add_tree_depth(_, dirname))
-      |> list.map(blamed_lines_for_file_at_depth(_, dirname))
+      |> list.map(blamed_lines_for_file_at_depth(_, case was_dir {
+        True -> dirname
+        False -> ""
+      }))
       |> result.all
       |> result.map(list.concat)
     }

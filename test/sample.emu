@@ -1,40 +1,14 @@
 |> Root
-    attr1  hellooooo
-    attr2 hello
-    |> SecondTag
-        attr Root
+    |> Section
 
-        blurb0
-        qblurb1
-        qblurb1
-        qblurb1
-        qblurb1
-        qblurb1
-        blurb2
-        blurb3
-        |> hello
-        child3
+        |> VerticalChunk
+            Some intro text here or something.
 
-        |> ThirdTag
+        |> VerticalChunk
+            |> Example
+                title Section2
 
-            child
+                This is a section.
 
-
-
-
-            beast
-            bear line A bear
-            cute
-    |> hey
-
-    ```c++
-    j
-     |> FakeTag
-      ```python
-      lll
-    qqq
-    ```
-
-
-    ``` language_name_upe here or whatever
-    ```
+        |> VerticalChunk
+            And more text here.
