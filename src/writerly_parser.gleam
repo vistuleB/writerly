@@ -1,8 +1,10 @@
+import blamedlines.{
+  type Blame, type BlamedLine, Blame, BlamedLine, prepend_comment as pc,
+}
 import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/pair
 import gleam/result
 import gleam/string
 import simplifile.{type FileError}
@@ -12,8 +14,8 @@ import simplifile.{type FileError}
 // ****************
 
 import vxml_parser.{
-  type Blame, type BlamedAttribute, type BlamedContent, type BlamedLine,
-  type VXML, Blame, BlamedAttribute, BlamedContent, BlamedLine, T, V,
+  type BlamedAttribute, type BlamedContent, type VXML, BlamedAttribute,
+  BlamedContent, T, V, debug_print_vxmls,
 }
 
 pub type Writerly {
@@ -245,11 +247,11 @@ fn nonempty_suffix_diagnostic(suffix: String) -> NonemptySuffixDiagnostic {
   let assert False = suffix == ""
 
   case string.starts_with(suffix, "|>") {
-    True -> Pipe(string.drop_left(suffix, 2))
+    True -> Pipe(string.drop_start(suffix, 2))
 
     False ->
       case string.starts_with(suffix, "```") {
-        True -> TripleBacktick(string.drop_left(suffix, 3))
+        True -> TripleBacktick(string.drop_start(suffix, 3))
 
         False -> Other(suffix)
       }
@@ -422,7 +424,7 @@ fn fast_forward_to_closing_backticks(
                 suffix_indent + string.length(suffix) - indent
               let assert True = padded_suffix_length >= string.length(suffix)
               let padded_suffix =
-                string.pad_left(suffix, to: padded_suffix_length, with: " ")
+                string.pad_start(suffix, to: padded_suffix_length, with: " ")
               let blamed_content = BlamedContent(blame, padded_suffix)
 
               case
@@ -447,7 +449,7 @@ fn fast_forward_to_closing_backticks(
                 False -> {
                   let assert True = string.starts_with(suffix, "```")
                   let assert True = suffix_indent == indent
-                  let annotation = string.drop_left(suffix, 3) |> string.trim
+                  let annotation = string.drop_start(suffix, 3) |> string.trim
 
                   case string.is_empty(annotation) {
                     True -> Ok(#([], move_forward(head)))
@@ -556,10 +558,7 @@ fn tentative_parse_at_indent(
                   case suffix_indent % 4 == 0 {
                     True -> {
                       let error_message =
-                        "indent too large "
-                        <> ins(suffix_indent)
-                        <> " > "
-                        <> ins(indent)
+                        string.repeat(" ", suffix_indent) <> suffix
 
                       let error =
                         TentativeErrorIndentationTooLarge(blame, error_message)
@@ -719,44 +718,47 @@ fn tentative_parse_at_indent(
 //* blamed line building *
 //************************
 
-fn add_blames_map_fold(
-  current_info: #(Int, String),
-  // line_number, filename
-  current_line: #(Int, String),
-  // indent, suffix
-) -> #(#(Int, String), BlamedLine) {
-  let #(line_number, filename) = current_info
-  let #(indent, suffix) = current_line
-  #(
-    #(line_number + 1, filename),
-    BlamedLine(Blame(filename, line_number, []), indent, suffix),
-  )
-}
+// fn add_blames_map_fold(
+//   current_info: #(Int, String),
+//   // line_number, filename
+//   current_line: #(Int, String),
+//   // indent, suffix
+// ) -> #(#(Int, String), BlamedLine) {
+//   let #(line_number, filename) = current_info
+//   let #(indent, suffix) = current_line
+//   #(
+//     #(line_number + 1, filename),
+//     BlamedLine(Blame(filename, line_number, []), indent, suffix),
+//   )
+// }
 
-fn add_blames(
-  pairs: List(#(Int, String)),
-  proto_blame: #(Int, String),
-) -> List(BlamedLine) {
-  list.map_fold(pairs, proto_blame, add_blames_map_fold)
-  |> pair.second
-}
+// fn add_blames(
+//   pairs: List(#(Int, String)),
+//   proto_blame: #(Int, String),
+// ) -> List(BlamedLine) {
+//   list.map_fold(pairs, proto_blame, add_blames_map_fold)
+//   |> pair.second
+// }
 
-fn line_to_indent_suffix_pair(line: String, extra_indent: Int) -> #(Int, String) {
-  let suffix = string.trim_left(line)
-  let indent = string.length(line) - string.length(suffix)
-  #(indent + extra_indent, suffix)
-}
+// fn line_to_indent_suffix_pair(line: String, extra_indent: Int) -> #(Int, String) {
+//   let suffix = string.trim_start(line)
+//   let indent = string.length(line) - string.length(suffix)
+//   #(indent + extra_indent, suffix)
+// }
 
-fn string_to_blamed_lines(
-  extra_indent: Int,
-  source: String,
-  filename: String,
-  starting_line_number: Int,
-) -> List(BlamedLine) {
-  string.split(source, "\n")
-  |> list.map(line_to_indent_suffix_pair(_, extra_indent))
-  |> add_blames(#(starting_line_number, filename))
-}
+// fn string_to_blamed_lines(
+//   extra_indent: Int,
+//   source: String,
+//   filename: String,
+//   starting_line_number: Int,
+// ) -> List(BlamedLine) {
+//   blamedlines.string_to_blamed_lines_hard_mode(
+//     source,
+//     filename,
+//     starting_line_number,
+//     extra_indent,
+//   )
+// }
 
 //****************************************
 //* tentative parsing api (blamed lines) *
@@ -772,7 +774,7 @@ fn tentative_parse_blamed_lines(
   case debug_messages {
     True -> {
       io.println("\n\n(tentative parse:)")
-      debug_print_tentatives_internal("(tentative)", "", parsed)
+      debug_print_tentatives("(tentative)", parsed)
       io.println("(tentative end)\n\n")
     }
     False -> Nil
@@ -790,7 +792,7 @@ fn tentative_parse_string(
   filename: String,
   debug_messages: Bool,
 ) -> List(TentativeWriterly) {
-  string_to_blamed_lines(0, source, filename, 1)
+  blamedlines.string_to_blamed_lines(source, filename)
   |> tentative_parse_blamed_lines(debug_messages)
 }
 
@@ -820,339 +822,343 @@ pub fn parse_string(
   |> parse_from_tentatives
 }
 
-//************
-//* printing *
-//************
-
-const pre_announce_pad_to = 60
-
-const margin_announce_pad_to = 30
-
-const debug_print_spaces = "    "
-
-fn margin_assembler(
-  pre_blame: String,
-  blame: Blame,
-  announce: String,
-  margin: String,
-) -> String {
-  let up_to_line_number =
-    pre_blame <> blame.filename <> ":" <> ins(blame.line_no)
-
-  string.pad_right(up_to_line_number, pre_announce_pad_to, " ")
-  <> string.pad_right(announce, margin_announce_pad_to, " ")
-  <> "###"
-  <> margin
-}
-
-fn margin_suppress_blame_assembler(
-  pre_blame: String,
-  _: Blame,
-  _: String,
-) -> String {
-  string.pad_right(pre_blame, pre_announce_pad_to, " ")
-  <> string.pad_right("", margin_announce_pad_to, " ")
-  <> "###"
-}
-
-fn margin_error_assembler(
-  pre_blame: String,
-  blame: Blame,
-  error_message: String,
-) -> String {
-  let up_to_line_number =
-    pre_blame <> blame.filename <> ":" <> ins(blame.line_no)
-
-  string.pad_right(up_to_line_number, pre_announce_pad_to, " ") <> error_message
-}
-
-fn map_with_special_first(
-  z: List(a),
-  fn1: fn(a) -> b,
-  fn2: fn(a) -> b,
-) -> List(b) {
-  case z {
-    [] -> []
-    [first, ..rest] -> fn1(first) |> list.prepend(list.map(rest, fn2), _)
-  }
-}
-
 //**********************
 //* printing Tentative *
 //**********************
 
-fn debug_print_tentative_internal(
-  pre_blame: String,
-  indentation: String,
+fn tentative_error_blame_and_type_and_message(
   t: TentativeWriterly,
-) {
+) -> #(Blame, String, String) {
   case t {
-    TentativeBlankLine(blame) ->
-      margin_assembler(pre_blame, blame, "BLANK", indentation)
-      |> io.println
-
-    TentativeBlurb(_, blamed_contents) -> {
-      map_with_special_first(
-        blamed_contents,
-        fn(first) {
-          {
-            margin_assembler(pre_blame, first.blame, "BLURB_ROOT", indentation)
-            <> first.content
-          }
-          |> io.println
-        },
-        fn(after_first) {
-          {
-            margin_assembler(pre_blame, after_first.blame, "BLURB", indentation)
-            <> after_first.content
-          }
-          |> io.println
-        },
-      )
-
-      Nil
-    }
-
-    TentativeCodeBlock(blame, annotation, blamed_contents) -> {
-      io.println(
-        margin_assembler(pre_blame, blame, "CODE_OPENING", indentation)
-        <> "```"
-        <> annotation,
-      )
-
-      list.map(blamed_contents, fn(blamed_content) {
-        io.println(
-          margin_assembler(
-            pre_blame,
-            blamed_content.blame,
-            "CODE_BODY",
-            indentation,
-          )
-          <> blamed_content.content,
-        )
-      })
-
-      io.println(
-        margin_assembler(pre_blame, blame, "CODE_CLOSING", indentation)
-        <> "```"
-        <> annotation,
-      )
-    }
-
-    TentativeTag(blame, tag_name, tentative_blamed_attributes, children) -> {
-      io.println(
-        margin_assembler(pre_blame, blame, "TAG", indentation)
-        <> "|>"
-        <> " "
-        <> ins(tag_name),
-      )
-
-      list.map(tentative_blamed_attributes, fn(t) -> Nil {
-        {
-          margin_assembler(
-            pre_blame,
-            t.blame,
-            "ATTRIBUTE",
-            indentation <> debug_print_spaces,
-          )
-          <> ins(t.key)
-          <> " "
-          <> t.value
-        }
-        |> io.println
-      })
-
-      case list.length(children) > 0 {
-        True -> {
-          io.println(margin_suppress_blame_assembler(
-            pre_blame,
-            blame,
-            "(printer inserted)",
-          ))
-        }
-        False -> Nil
-      }
-
-      debug_print_tentatives_internal(
-        pre_blame,
-        indentation <> debug_print_spaces,
-        children,
-      )
-    }
-
-    TentativeErrorIndentationTooLarge(blame, message) ->
-      margin_error_assembler(
-        pre_blame,
-        blame,
-        "INDENTATION ERROR (LARGE): " <> message,
-      )
-      |> io.println
-
-    TentativeErrorIndentationNotMultipleOfFour(blame, message) ->
-      margin_error_assembler(
-        pre_blame,
-        blame,
-        "INDENTATION ERROR (!MULT 4): " <> message,
-      )
-      |> io.println
-
-    TentativeErrorNoCodeBlockClosing(blame) ->
-      margin_error_assembler(
-        pre_blame,
-        blame,
-        "CLOSING BACKTICKS NOT FOUND ERROR",
-      )
-      |> io.println
-
-    TentativeErrorCodeBlockAnnotation(blame, message) ->
-      margin_error_assembler(
-        pre_blame,
-        blame,
-        "CLOSING BACKTICKS UNWANTED ANNOTATION ERROR: " <> message,
-      )
-      |> io.println
+    TentativeBlankLine(_) -> panic as "not an error node"
+    TentativeBlurb(_, _) -> panic as "not an error node"
+    TentativeCodeBlock(_, _, _) -> panic as "not an error node"
+    TentativeTag(_, _, _, _) -> panic as "not an error node"
+    TentativeErrorIndentationTooLarge(blame, message) -> #(
+      blame,
+      "IndentationTooLarge",
+      message,
+    )
+    TentativeErrorIndentationNotMultipleOfFour(blame, message) -> #(
+      blame,
+      "IndentationNotMultipleOfFour",
+      message,
+    )
+    TentativeErrorNoCodeBlockClosing(blame) -> #(
+      blame,
+      "NoCodeBlockClosing",
+      "",
+    )
+    TentativeErrorCodeBlockAnnotation(blame, message) -> #(
+      blame,
+      "CodeBlockAnnotation",
+      message,
+    )
   }
 }
 
-fn debug_print_tentatives_internal(
-  pre_blame: String,
-  indentation: String,
-  tentatives: List(TentativeWriterly),
-) {
-  case tentatives {
-    [] -> Nil
-    [first, ..rest] -> {
-      debug_print_tentative_internal(pre_blame, indentation, first)
-      debug_print_tentatives_internal(pre_blame, indentation, rest)
+fn blamed_content_to_blamed_line(
+  blamed_content: BlamedContent,
+  indentation: Int,
+) -> BlamedLine {
+  BlamedLine(blamed_content.blame, indentation, blamed_content.content)
+}
+
+fn blamed_contents_to_blamed_lines(
+  blamed_contents: List(BlamedContent),
+  indentation: Int,
+) -> List(BlamedLine) {
+  blamed_contents
+  |> list.map(blamed_content_to_blamed_line(_, indentation))
+}
+
+fn tentative_blamed_attribute_to_blamed_line(
+  blamed_attribute: TentativeBlamedAttribute,
+  indentation: Int,
+) -> BlamedLine {
+  case blamed_attribute.key {
+    Ok(_) ->
+      BlamedLine(
+        blamed_attribute.blame,
+        indentation,
+        ins(blamed_attribute.key) <> " " <> blamed_attribute.value,
+      )
+    Error(IllegalAttributeKeyCharacter(bad_key, bad_char)) ->
+      BlamedLine(
+        blamed_attribute.blame
+          |> pc("ERROR illegal character in key: " <> bad_char),
+        indentation,
+        bad_key <> " " <> blamed_attribute.value,
+      )
+  }
+}
+
+fn tentative_blamed_attributes_to_blamed_lines(
+  blamed_attributes: List(TentativeBlamedAttribute),
+  indentation: Int,
+) -> List(BlamedLine) {
+  blamed_attributes
+  |> list.map(tentative_blamed_attribute_to_blamed_line(_, indentation))
+}
+
+fn tentative_to_blamed_lines_internal(
+  t: TentativeWriterly,
+  indentation: Int,
+) -> List(BlamedLine) {
+  case t {
+    TentativeBlankLine(blame) -> {
+      [BlamedLine(blame, 0, "")]
+    }
+    TentativeBlurb(_, blamed_contents) ->
+      blamed_contents_to_blamed_lines(blamed_contents, indentation)
+    TentativeCodeBlock(blame, annotation, blamed_contents) -> {
+      list.flatten([
+        [BlamedLine(blame, indentation, "```" <> annotation)],
+        blamed_contents_to_blamed_lines(blamed_contents, indentation),
+        [BlamedLine(blame, indentation, "```")],
+      ])
+    }
+    TentativeTag(blame, maybe_tag, attributes, children) -> {
+      let tag_line = case maybe_tag {
+        Ok(tag) -> BlamedLine(blame, indentation, "|> " <> tag)
+        Error(IllegalTagCharacter(bad_tag, bad_char)) ->
+          BlamedLine(
+            blame
+              |> blamedlines.prepend_comment(
+                "ERROR illegal tag character: " <> bad_char,
+              ),
+            indentation,
+            "|> " <> bad_tag,
+          )
+        Error(EmptyTag) ->
+          BlamedLine(
+            blame |> blamedlines.prepend_comment("ERROR empty tag"),
+            indentation,
+            "<>",
+          )
+      }
+      let attribute_lines =
+        tentative_blamed_attributes_to_blamed_lines(attributes, indentation + 4)
+      let children_lines =
+        tentatives_to_blamed_lines_internal(children, indentation + 4)
+      let blank_lines = case list.is_empty(children_lines) {
+        True -> []
+        False -> [BlamedLine(blame, 0, "")]
+      }
+      list.flatten([[tag_line], attribute_lines, blank_lines, children_lines])
+    }
+    _ -> {
+      let #(blame, error_type, message) =
+        tentative_error_blame_and_type_and_message(t)
+      [
+        BlamedLine(
+          blame
+            |> blamedlines.prepend_comment("ERROR " <> error_type),
+          indentation,
+          message,
+        ),
+      ]
     }
   }
+}
+
+fn tentatives_to_blamed_lines_internal(
+  tentatives: List(TentativeWriterly),
+  indentation: Int,
+) -> List(BlamedLine) {
+  tentatives
+  |> list.map(tentative_to_blamed_lines_internal(_, indentation))
+  |> list.flatten
+}
+
+fn debug_print_tentatives(banner: String, tentatives: List(TentativeWriterly)) {
+  tentatives
+  |> tentatives_to_blamed_lines_internal(0)
+  |> blamedlines.blamed_lines_to_table_vanilla_bob_and_jane_sue(banner, _)
 }
 
 //*************************************
 //* debug printing writerly as itself *
 //*************************************
 
-fn debug_print_writerly_internal(
-  pre_blame: String,
-  indentation: String,
-  t: Writerly,
-) {
-  case t {
-    BlankLine(blame) ->
-      margin_assembler(pre_blame, blame, "BLANK", indentation)
-      |> io.println
-
-    Blurb(_, blamed_contents) -> {
-      map_with_special_first(
-        blamed_contents,
-        fn(first) {
-          {
-            margin_assembler(pre_blame, first.blame, "BLURB_ROOT", indentation)
-            <> first.content
-          }
-          |> io.println
-        },
-        fn(after_first) {
-          {
-            margin_assembler(pre_blame, after_first.blame, "BLURB", indentation)
-            <> after_first.content
-          }
-          |> io.println
-        },
-      )
-
-      Nil
-    }
-
-    CodeBlock(blame, annotation, blamed_contents) -> {
-      {
-        margin_assembler(pre_blame, blame, "CODE_OPENING", indentation)
-        <> "```"
-        <> annotation
-      }
-      |> io.println
-
-      list.map(blamed_contents, fn(blamed_content) {
-        {
-          margin_assembler(
-            pre_blame,
-            blamed_content.blame,
-            "CODE_BODY",
-            indentation,
+pub fn debug_annotate_blames(writerly: Writerly) -> Writerly {
+  case writerly {
+    BlankLine(blame) -> BlankLine(blame |> pc("BlankLine"))
+    Blurb(blame, blamed_contents) ->
+      Blurb(
+        blame |> pc("Blurb"),
+        list.index_map(blamed_contents, fn(blamed_content, i) {
+          BlamedContent(
+            blamed_content.blame
+              |> pc("Blurb > BlamedContent(" <> ins(i + 1) <> ")"),
+            blamed_content.content,
           )
-          <> blamed_content.content
-        }
-        |> io.println
-      })
-
-      {
-        margin_assembler(pre_blame, blame, "CODE_CLOSING", indentation)
-        <> "```"
-        <> annotation
-      }
-      |> io.println
-    }
-
-    Tag(blame, tag_name, tentative_blamed_attributes, children) -> {
-      {
-        margin_assembler(pre_blame, blame, "TAG", indentation)
-        <> "|>"
-        <> " "
-        <> tag_name
-      }
-      |> io.println
-
-      list.map(tentative_blamed_attributes, fn(t) {
-        {
-          margin_assembler(
-            pre_blame,
-            t.blame,
-            "ATTRIBUTE",
-            indentation <> debug_print_spaces,
-          )
-          <> t.key
-          <> " "
-          <> t.value
-        }
-        |> io.println
-      })
-
-      case list.length(children) > 0 {
-        True ->
-          io.println(margin_suppress_blame_assembler(
-            pre_blame,
-            blame,
-            "(printer inserted)",
-          ))
-
-        False -> Nil
-      }
-
-      debug_print_writerlys_internal(
-        pre_blame,
-        indentation <> debug_print_spaces,
-        children,
+        }),
       )
-    }
+    CodeBlock(blame, annotation, blamed_contents) ->
+      CodeBlock(
+        blame |> pc("CodeBlock:" <> annotation),
+        annotation,
+        list.index_map(blamed_contents, fn(blamed_content, i) {
+          BlamedContent(
+            blamed_content.blame
+              |> pc("CodeBlock > BlamedContent(" <> ins(i + 1) <> ")"),
+            blamed_content.content,
+          )
+        }),
+      )
+    Tag(blame, tag, attributes, children) ->
+      Tag(
+        blame |> pc("Tag"),
+        tag,
+        list.index_map(attributes, fn(blamed_attribute, i) {
+          BlamedAttribute(
+            blamed_attribute.blame
+              |> pc("Tag > BlamedAttribute(" <> ins(i + 1) <> ")"),
+            blamed_attribute.key,
+            blamed_attribute.value,
+          )
+        }),
+        children
+          |> list.map(debug_annotate_blames),
+      )
   }
 }
 
-fn debug_print_writerlys_internal(
-  pre_blame: String,
-  indentation: String,
-  writerlys: List(Writerly),
-) {
+fn blamed_attribute_to_blamed_line(
+  blamed_attribute: BlamedAttribute,
+  indentation: Int,
+) -> BlamedLine {
+  BlamedLine(
+    blamed_attribute.blame,
+    indentation,
+    blamed_attribute.key <> " " <> blamed_attribute.value,
+  )
+}
+
+fn blamed_attributes_to_blamed_lines(
+  blamed_attributes: List(BlamedAttribute),
+  indentation: Int,
+) -> List(BlamedLine) {
+  blamed_attributes |> list.map(blamed_attribute_to_blamed_line(_, indentation))
+}
+
+fn starts_with_text_child(writerlys: List(Writerly)) -> Bool {
   case writerlys {
-    [] -> Nil
-    [first, ..rest] -> {
-      debug_print_writerly_internal(pre_blame, indentation, first)
-      debug_print_writerlys_internal(pre_blame, indentation, rest)
+    [Blurb(_, _), ..] -> True
+    _ -> False
+  }
+}
+
+fn writerly_to_blamed_lines_internal(
+  t: Writerly,
+  indentation: Int,
+  debug_annotations: Bool,
+) -> List(BlamedLine) {
+  case t {
+    BlankLine(blame) -> [BlamedLine(blame, 0, "")]
+    Blurb(_, blamed_contents) ->
+      blamed_contents_to_blamed_lines(blamed_contents, indentation)
+    CodeBlock(blame, annotation, blamed_contents) -> {
+      list.flatten([
+        [BlamedLine(blame, indentation, "```" <> annotation)],
+        blamed_contents_to_blamed_lines(blamed_contents, indentation),
+        [
+          BlamedLine(
+            case debug_annotations {
+              False -> blame
+              True -> blame |> pc("CodeBlock end")
+            },
+            indentation,
+            "```",
+          ),
+        ],
+      ])
+    }
+    Tag(blame, tag, attributes, children) -> {
+      let tag_line = BlamedLine(blame, indentation, "|> " <> tag)
+      let attribute_lines =
+        blamed_attributes_to_blamed_lines(attributes, indentation + 4)
+      let children_lines =
+        writerlys_to_blamed_lines_internal(
+          children,
+          indentation + 4,
+          debug_annotations,
+        )
+      let blank_lines = case
+        starts_with_text_child(children) && list.length(children_lines) > 0
+      {
+        True -> [
+          BlamedLine(
+            case debug_annotations {
+              False -> blame |> blamedlines.clear_comments
+              True ->
+                blame |> blamedlines.clear_comments |> pc("(separation line)")
+            },
+            0,
+            "",
+          ),
+        ]
+        False -> []
+      }
+      list.flatten([[tag_line], attribute_lines, blank_lines, children_lines])
     }
   }
 }
 
-pub fn debug_print_writerlys(pre_blame: String, writerlys: List(Writerly)) {
-  debug_print_writerlys_internal(pre_blame, "", writerlys)
+fn writerlys_to_blamed_lines_internal(
+  writerlys: List(Writerly),
+  indentation: Int,
+  debug_annotations: Bool,
+) -> List(BlamedLine) {
+  writerlys
+  |> list.map(writerly_to_blamed_lines_internal(
+    _,
+    indentation,
+    debug_annotations,
+  ))
+  |> list.flatten
+}
+
+pub fn debug_writerlys_to_string(
+  banner: String,
+  writerlys: List(Writerly),
+) -> String {
+  writerlys
+  |> list.map(debug_annotate_blames)
+  |> writerlys_to_blamed_lines_internal(0, True)
+  |> blamedlines.blamed_lines_to_table_vanilla_bob_and_jane_sue(banner, _)
+}
+
+pub fn debug_writerly_to_string(banner: String, writerly: Writerly) -> String {
+  [writerly]
+  |> debug_writerlys_to_string(banner, _)
+}
+
+pub fn debug_print_writerlys(banner: String, writerlys: List(Writerly)) {
+  debug_writerlys_to_string(banner, writerlys)
+  |> io.println
+}
+
+pub fn debug_print_writerly(banner: String, writerly: Writerly) {
+  [writerly]
+  |> debug_print_writerlys(banner, _)
+}
+
+//*********************************
+//* converting Writerly to string *
+//*********************************
+
+pub fn writerlys_to_string(writerlys: List(Writerly)) -> String {
+  writerlys
+  |> writerlys_to_blamed_lines_internal(0, False)
+  |> blamedlines.blamed_lines_to_string
+}
+
+pub fn writerly_to_string(writerly: Writerly) -> String {
+  writerly
+  |> writerly_to_blamed_lines_internal(0, False)
+  |> blamedlines.blamed_lines_to_string
 }
 
 //*******************************
@@ -1211,90 +1217,16 @@ pub fn writerlys_to_vxmls(writerlys: List(Writerly)) -> List(VXML) {
   list.map(writerlys, writerly_to_vxml)
 }
 
-//**************************
-//* debug printing as VXML *
-//**************************
-
-fn add_quotes(s: String) -> String {
-  "\"" <> s <> "\""
-}
-
-fn debug_print_vxml_internal(pre_blame: String, indentation: String, t: VXML) {
-  case t {
-    T(blame, blamed_contents) -> {
-      { margin_assembler(pre_blame, blame, "TEXT_NODE", indentation) <> "<>" }
-      |> io.println
-
-      list.map(blamed_contents, fn(blamed_content) {
-        {
-          margin_assembler(
-            pre_blame,
-            blamed_content.blame,
-            "TEXT_LINE",
-            indentation,
-          )
-          <> debug_print_spaces
-          <> add_quotes(blamed_content.content)
-        }
-        |> io.println
-      })
-
-      Nil
-    }
-
-    V(blame, tag, blamed_attributes, children) -> {
-      {
-        margin_assembler(pre_blame, blame, "TAG", indentation)
-        <> "<>"
-        <> " "
-        <> tag
-      }
-      |> io.println
-
-      list.map(blamed_attributes, fn(t) {
-        {
-          margin_assembler(pre_blame, t.blame, "ATTRIBUTE", indentation)
-          <> debug_print_spaces
-          <> t.key
-          <> " "
-          <> t.value
-        }
-        |> io.println
-      })
-
-      debug_print_vxmls_internal(
-        pre_blame,
-        indentation <> debug_print_spaces,
-        children,
-      )
-    }
-  }
-}
-
-fn debug_print_vxmls_internal(
-  pre_blame: String,
-  indentation: String,
-  vxmls: List(VXML),
-) {
-  case vxmls {
-    [] -> Nil
-    [first, ..rest] -> {
-      debug_print_vxml_internal(pre_blame, indentation, first)
-      debug_print_vxmls_internal(pre_blame, indentation, rest)
-    }
-  }
-}
-
-pub fn debug_print_vxmls(pre_blame: String, vxmls: List(VXML)) {
-  debug_print_vxmls_internal(pre_blame, "", vxmls)
-}
-
 //********
 //* main *
 //********
 
 fn file_is_not_commented(path: String) -> Bool {
   !{ string.contains(path, "/#") || string.starts_with(path, "#") }
+}
+
+fn file_is_not_hidden(path: String) -> Bool {
+  !{ string.contains(path, "/.") || string.starts_with(path, ".") }
 }
 
 fn path_to_parent_file(path: String) -> String {
@@ -1310,7 +1242,7 @@ fn path_to_parent_file(path: String) -> String {
 fn depth_in_directory_tree(path: String, dirname: String) -> Int {
   {
     path
-    |> string.drop_left(string.length(dirname) + 1)
+    |> string.drop_start(string.length(dirname) + 1)
     |> string.split("/")
     |> list.length
   }
@@ -1343,17 +1275,19 @@ fn blamed_lines_for_file_at_depth(
     True -> 0
     False -> string.length(dirname) + 1
   }
-  let shortened_filename_for_blame = string.drop_left(filename, length_to_drop)
+  let shortened_filename_for_blame = string.drop_start(filename, length_to_drop)
 
   case simplifile.read(filename) {
     Ok(string) ->
-      Ok(string_to_blamed_lines(
-        depth * 4,
+      Ok(blamedlines.string_to_blamed_lines_hard_mode(
         string,
         shortened_filename_for_blame,
         1,
+        depth * 4,
       ))
-    Error(error) -> Error(error)
+    Error(error) -> {
+      Error(error)
+    }
   }
 }
 
@@ -1371,7 +1305,9 @@ pub fn assemble_blamed_lines(
   case get_files(dirname) {
     Ok(#(was_dir, files)) -> {
       files
+      |> io.debug
       |> list.filter(file_is_not_commented)
+      |> list.filter(file_is_not_hidden)
       |> list.sort(string.compare)
       |> list.map(add_tree_depth(_, dirname))
       |> list.map(blamed_lines_for_file_at_depth(_, case was_dir {
@@ -1379,7 +1315,7 @@ pub fn assemble_blamed_lines(
         False -> ""
       }))
       |> result.all
-      |> result.map(list.concat)
+      |> result.map(list.flatten)
     }
     Error(error) -> Error(error)
   }
@@ -1393,6 +1329,9 @@ fn contents_test() {
       case parse_blamed_lines(lines, True) {
         Ok(writerlys) -> {
           debug_print_writerlys("(debug_print_writerlys)", writerlys)
+          io.println("")
+          io.println("")
+          io.println(writerlys_to_string(writerlys))
           io.println("")
           io.println("")
           debug_print_vxmls("(vxmls)", writerlys |> writerlys_to_vxmls)
@@ -1413,7 +1352,7 @@ fn contents_test() {
 }
 
 fn sample_test() {
-  let filename = "test/contents"
+  let filename = "test/sample.emu"
 
   case simplifile.read(filename) {
     Error(e) -> io.println("Error reading " <> filename <> ": " <> ins(e))
@@ -1421,6 +1360,10 @@ fn sample_test() {
     Ok(file) -> {
       case parse_string(file, filename, True) {
         Ok(writerlys) -> {
+          debug_print_writerlys("(writerlys)", writerlys)
+          io.println("")
+          io.println(writerlys_to_string(writerlys))
+          io.println("")
           debug_print_vxmls("(vxmls)", writerlys |> writerlys_to_vxmls)
         }
 
@@ -1436,7 +1379,7 @@ fn sample_test() {
 }
 
 pub fn main() {
-  let test_content = True
+  let test_content = False
   case test_content {
     True -> contents_test()
     False -> sample_test()
