@@ -1137,7 +1137,7 @@ pub fn debug_writerly_to_string(banner: String, writerly: Writerly) -> String {
 
 pub fn debug_print_writerlys(banner: String, writerlys: List(Writerly)) {
   debug_writerlys_to_string(banner, writerlys)
-  |> io.println
+  |> io.print
 }
 
 pub fn debug_print_writerly(banner: String, writerly: Writerly) {
@@ -1305,7 +1305,6 @@ pub fn assemble_blamed_lines(
   case get_files(dirname) {
     Ok(#(was_dir, files)) -> {
       files
-      |> io.debug
       |> list.filter(file_is_not_commented)
       |> list.filter(file_is_not_hidden)
       |> list.sort(string.compare)
