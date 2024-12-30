@@ -1305,7 +1305,6 @@ pub fn assemble_blamed_lines(
   case get_files(dirname) {
     Ok(#(was_dir, files)) -> {
       files
-      |> io.debug
       |> list.filter(file_is_not_commented)
       |> list.filter(file_is_not_hidden)
       |> list.sort(string.compare)
