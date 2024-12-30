@@ -1137,7 +1137,7 @@ pub fn debug_writerly_to_string(banner: String, writerly: Writerly) -> String {
 
 pub fn debug_print_writerlys(banner: String, writerlys: List(Writerly)) {
   debug_writerlys_to_string(banner, writerlys)
-  |> io.println
+  |> io.print
 }
 
 pub fn debug_print_writerly(banner: String, writerly: Writerly) {
