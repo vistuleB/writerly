@@ -7,7 +7,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
-import simplifile.{type FileError}
+import simplifile
 
 // ****************
 // * public types *
@@ -38,6 +38,11 @@ pub type WriterlyParseError {
   WriterlyParseErrorIndentationNotMultipleOfFour(Blame, String)
   WriterlyParseErrorCodeBlockClosingUnwantedAnnotation(Blame)
   WriterlyParseErrorCodeBlockClosingMissing(Blame)
+}
+
+pub type FileOrParseError {
+  FileError(simplifile.FileError)
+  ParseError(WriterlyParseError)
 }
 
 // ***************
@@ -714,64 +719,18 @@ fn tentative_parse_at_indent(
   }
 }
 
-//************************
-//* blamed line building *
-//************************
-
-// fn add_blames_map_fold(
-//   current_info: #(Int, String),
-//   // line_number, filename
-//   current_line: #(Int, String),
-//   // indent, suffix
-// ) -> #(#(Int, String), BlamedLine) {
-//   let #(line_number, filename) = current_info
-//   let #(indent, suffix) = current_line
-//   #(
-//     #(line_number + 1, filename),
-//     BlamedLine(Blame(filename, line_number, []), indent, suffix),
-//   )
-// }
-
-// fn add_blames(
-//   pairs: List(#(Int, String)),
-//   proto_blame: #(Int, String),
-// ) -> List(BlamedLine) {
-//   list.map_fold(pairs, proto_blame, add_blames_map_fold)
-//   |> pair.second
-// }
-
-// fn line_to_indent_suffix_pair(line: String, extra_indent: Int) -> #(Int, String) {
-//   let suffix = string.trim_start(line)
-//   let indent = string.length(line) - string.length(suffix)
-//   #(indent + extra_indent, suffix)
-// }
-
-// fn string_to_blamed_lines(
-//   extra_indent: Int,
-//   source: String,
-//   filename: String,
-//   starting_line_number: Int,
-// ) -> List(BlamedLine) {
-//   blamedlines.string_to_blamed_lines_hard_mode(
-//     source,
-//     filename,
-//     starting_line_number,
-//     extra_indent,
-//   )
-// }
-
 //****************************************
 //* tentative parsing api (blamed lines) *
 //****************************************
 
 fn tentative_parse_blamed_lines(
   head: FileHead,
-  debug_messages: Bool,
+  debug: Bool,
 ) -> List(TentativeWriterly) {
   let #(parsed, final_head) = tentative_parse_at_indent(0, head)
   let assert True = list.is_empty(final_head)
 
-  case debug_messages {
+  case debug {
     True -> {
       io.println("\n\n(tentative parse:)")
       debug_print_tentatives("(tentative)", parsed)
@@ -790,36 +749,49 @@ fn tentative_parse_blamed_lines(
 fn tentative_parse_string(
   source: String,
   filename: String,
-  debug_messages: Bool,
+  debug: Bool,
 ) -> List(TentativeWriterly) {
   blamedlines.string_to_blamed_lines(source, filename)
-  |> tentative_parse_blamed_lines(debug_messages)
+  |> tentative_parse_blamed_lines(debug)
 }
 
 //***************************************
 //* writerly parsing api (blamed lines) *
 //***************************************
 
-pub fn parse_blamed_lines(
+fn parse_blamed_lines_debug(
   lines: List(BlamedLine),
-  debug_messages: Bool,
+  debug: Bool
 ) -> Result(List(Writerly), WriterlyParseError) {
   lines
-  |> tentative_parse_blamed_lines(debug_messages)
+  |> tentative_parse_blamed_lines(debug)
   |> parse_from_tentatives
+}
+
+pub fn parse_blamed_lines(
+  lines: List(BlamedLine),
+) -> Result(List(Writerly), WriterlyParseError) {
+  parse_blamed_lines_debug(lines, False)
 }
 
 //*********************************
 //* writerly parsing api (string) *
 //*********************************
 
+fn parse_string_debug(
+  source: String,
+  filename: String,
+  debug: Bool,
+) -> Result(List(Writerly), WriterlyParseError) {
+  tentative_parse_string(source, filename, debug)
+  |> parse_from_tentatives
+}
+
 pub fn parse_string(
   source: String,
   filename: String,
-  debug_messages: Bool,
 ) -> Result(List(Writerly), WriterlyParseError) {
-  tentative_parse_string(source, filename, debug_messages)
-  |> parse_from_tentatives
+  parse_string_debug(source, filename, False)
 }
 
 //**********************
@@ -1226,7 +1198,12 @@ fn file_is_not_commented(path: String) -> Bool {
 }
 
 fn file_is_not_hidden(path: String) -> Bool {
-  !{ string.contains(path, "/.") || string.starts_with(path, ".") }
+  let assert Ok(filename) = {
+    path
+      |> string.split("/")
+      |> list.last
+  }
+  !string.starts_with(filename, ".")
 }
 
 fn path_to_parent_file(path: String) -> String {
@@ -1269,7 +1246,7 @@ fn add_tree_depth(path: String, dirname: String) -> #(Int, String) {
 fn blamed_lines_for_file_at_depth(
   pair: #(Int, String),
   dirname: String,
-) -> Result(List(BlamedLine), FileError) {
+) -> Result(List(BlamedLine), simplifile.FileError) {
   let #(depth, filename) = pair
   let length_to_drop = case dirname == "" {
     True -> 0
@@ -1291,7 +1268,9 @@ fn blamed_lines_for_file_at_depth(
   }
 }
 
-fn get_files(dirname: String) -> Result(#(Bool, List(String)), FileError) {
+fn get_files(
+  dirname: String,
+) -> Result(#(Bool, List(String)), simplifile.FileError) {
   case simplifile.get_files(dirname) {
     Ok(files) -> Ok(#(True, files))
     Error(simplifile.Enotdir) -> Ok(#(False, [dirname]))
@@ -1301,7 +1280,7 @@ fn get_files(dirname: String) -> Result(#(Bool, List(String)), FileError) {
 
 pub fn assemble_blamed_lines(
   dirname: String,
-) -> Result(List(BlamedLine), FileError) {
+) -> Result(List(BlamedLine), simplifile.FileError) {
   case get_files(dirname) {
     Ok(#(was_dir, files)) -> {
       files
@@ -1320,12 +1299,46 @@ pub fn assemble_blamed_lines(
   }
 }
 
+fn on_error_on_ok(
+  result r: Result(a, b),
+  on_error on_error: fn(b) -> c,
+  with_on_ok on_ok: fn(a) -> c,
+) -> c {
+  case r {
+    Error(b) -> on_error(b)
+    Ok(a) -> on_ok(a)
+  }
+}
+
+pub fn assemble_and_parse_debug(
+  dir_or_filename: String,
+  debug: Bool,
+) -> Result(List(Writerly), FileOrParseError) {
+  use assembled <- on_error_on_ok(
+    result: assemble_blamed_lines(dir_or_filename),
+    on_error: fn(error) { Error(FileError(error)) },
+  )
+
+  use writerlys <- on_error_on_ok(
+    result: parse_blamed_lines_debug(assembled, debug),
+    on_error: fn(error) { Error(ParseError(error)) },
+  )
+
+  Ok(writerlys)
+}
+
+pub fn assemble_and_parse(
+  dir_or_filename: String,
+) -> Result(List(Writerly), FileOrParseError) {
+  assemble_and_parse_debug(dir_or_filename, False)
+}
+
 fn contents_test() {
   let dirname = "test/contents"
 
   case assemble_blamed_lines(dirname) {
     Ok(lines) -> {
-      case parse_blamed_lines(lines, True) {
+      case parse_blamed_lines_debug(lines, True) {
         Ok(writerlys) -> {
           debug_print_writerlys("(debug_print_writerlys)", writerlys)
           io.println("")
@@ -1357,7 +1370,7 @@ fn sample_test() {
     Error(e) -> io.println("Error reading " <> filename <> ": " <> ins(e))
 
     Ok(file) -> {
-      case parse_string(file, filename, True) {
+      case parse_string_debug(file, filename, True) {
         Ok(writerlys) -> {
           debug_print_writerlys("(writerlys)", writerlys)
           io.println("")
