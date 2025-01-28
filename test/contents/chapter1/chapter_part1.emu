@@ -1,4 +1,17 @@
 |> Section
+    handle sec1
+
+    Paragraph 1.
+
+    |> Example
+
+        Hello.
+
+    |> Image
+        attr1 val1
+
+|> Section
+    handle sec2
 
     Paragraph 1.
 

@@ -7,6 +7,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
+import gleam/pair
 import simplifile
 
 // ****************
@@ -37,7 +38,7 @@ pub type WriterlyParseError {
   WriterlyParseErrorIndentationTooLarge(Blame, String)
   WriterlyParseErrorIndentationNotMultipleOfFour(Blame, String)
   WriterlyParseErrorCodeBlockClosingUnwantedAnnotation(Blame)
-  WriterlyParseErrorCodeBlockClosingMissing(Blame)
+  WriterlyParseError(Blame)
 }
 
 pub type FileOrParseError {
@@ -198,7 +199,7 @@ fn parse_from_tentative(
       Error(WriterlyParseErrorIndentationNotMultipleOfFour(blame, message))
 
     TentativeErrorNoCodeBlockClosing(blame) ->
-      Error(WriterlyParseErrorCodeBlockClosingMissing(blame))
+      Error(WriterlyParseError(blame))
 
     TentativeBlankLine(blame) -> Ok(BlankLine(blame))
 
@@ -761,7 +762,7 @@ fn tentative_parse_string(
 
 fn parse_blamed_lines_debug(
   lines: List(BlamedLine),
-  debug: Bool
+  debug: Bool,
 ) -> Result(List(Writerly), WriterlyParseError) {
   lines
   |> tentative_parse_blamed_lines(debug)
@@ -808,7 +809,7 @@ fn tentative_error_blame_and_type_and_message(
     TentativeTag(_, _, _, _) -> panic as "not an error node"
     TentativeErrorIndentationTooLarge(blame, message) -> #(
       blame,
-      "IndentationTooLarge",
+      "WriterlyParseErrorIndentationTooLarge",
       message,
     )
     TentativeErrorIndentationNotMultipleOfFour(blame, message) -> #(
@@ -1200,8 +1201,8 @@ fn file_is_not_commented(path: String) -> Bool {
 fn file_is_not_hidden(path: String) -> Bool {
   let assert Ok(filename) = {
     path
-      |> string.split("/")
-      |> list.last
+    |> string.split("/")
+    |> list.last
   }
   !string.starts_with(filename, ".")
 }
@@ -1243,28 +1244,264 @@ fn add_tree_depth(path: String, dirname: String) -> #(Int, String) {
   #(base_depth + zero_one(must_add_1), path)
 }
 
+fn attribute_matches_arg(attr: BlamedAttribute, arg: #(String, String)) -> Bool {
+  let #(key, value) = arg
+  attr.key == key && attr.value == value
+}
+
+fn key_value_pairs_that_match_attribute(
+  attr: BlamedAttribute,
+  args: List(#(String, String))
+) -> List(Bool) {
+  list.map(
+    args,
+    attribute_matches_arg(attr, _)
+  )
+}
+
+fn column_wise_or_pair(
+  l1: List(Bool),
+  l2: List(Bool),
+) -> List(Bool) {
+  let assert True = list.length(l1) == list.length(l2)
+  list.map2(
+    l1,
+    l2,
+    fn (b1, b2) { b1 || b2 }
+  )
+}
+
+fn column_wise_or(
+  lists: List(List(Bool)),
+  common_length: Int,
+) -> List(Bool) {
+  list.fold(
+    lists,
+    list.repeat(False, common_length),
+    column_wise_or_pair
+  )
+}
+
+fn match_selector_internal(
+  writerly: Writerly,
+  key_value_pairs: List(#(String, String))
+) -> #(List(Writerly), List(Bool)) {
+  case writerly {
+    Tag(blame, tag, attrs, children) -> {
+      let bools =
+        attrs
+        |> list.map(key_value_pairs_that_match_attribute(_, key_value_pairs))
+        |> column_wise_or(list.length(key_value_pairs))
+
+      let list_pairs =
+        list.map(
+          children,
+          match_selector_internal(_, key_value_pairs)
+        )
+
+      let final_bools =
+        list_pairs
+        |> list.map(pair.second)
+        |> column_wise_or(list.length(key_value_pairs))
+        |> column_wise_or_pair(bools)
+
+      let assert True = list.all(
+        list_pairs,
+        fn (pair) {
+          { pair |> pair.first |> list.is_empty } == { pair |> pair.second |> list.all(fn(b) {!b})}
+        }
+      )
+
+      case list.any(bools, fn(b) { b }) {
+        True -> #([writerly], final_bools)
+        False -> {
+          let children =
+            list_pairs
+            |> list.map(fn(pair) { pair |> pair.first })
+            |> list.flatten
+          case list.is_empty(children) {
+            True -> {
+              let assert True = !list.any(final_bools, fn(b) {b})
+              #([], final_bools)
+            }
+            False -> #([Tag(blame, tag, attrs, children)], final_bools)
+          }
+        }
+      }
+    }
+
+    _ -> #([], list.repeat(False, list.length(key_value_pairs)))
+  }
+}
+
+fn writerlys_path_selector_filter(
+  writerlys: List(Writerly),
+  path_selector: #(String, List(#(String, String)))
+) -> List(Writerly) {
+  let #(path, key_value_pairs) = path_selector
+
+  let list_pairs = list.map(
+    writerlys,
+    match_selector_internal(_, key_value_pairs)
+  )
+
+  let bools =
+    list_pairs
+    |> list.map(pair.second)
+    |> column_wise_or(list.length(key_value_pairs))
+
+  case {
+    list.zip(bools, key_value_pairs)
+    |> list.key_find(False)
+  } {
+    Error(Nil) -> Nil
+    Ok(pair) -> panic as {"no matches for selector '" <> {pair |> pair.first } <> "=" <> {pair |> pair.second} <> "' in path " <> path}
+  }
+
+  list_pairs
+  |> list.map(pair.first)
+  |> list.flatten
+}
+
+fn take_while_not_prefix(
+  lines: List(BlamedLine),
+  prefix: String
+) -> #(List(BlamedLine), List(BlamedLine)) {
+  list.split_while(
+    lines,
+    fn(line) { !string.starts_with(line.blame.filename, prefix) }
+  )
+}
+
+fn take_while_prefix(
+  lines: List(BlamedLine),
+  prefix: String
+) -> #(List(BlamedLine), List(BlamedLine)) {
+  list.split_while(
+    lines,
+    fn(line) { string.starts_with(line.blame.filename, prefix) }
+  )
+}
+
+fn add_indent(
+  lines: List(BlamedLine),
+  indent: Int
+) -> Result(List(BlamedLine), Nil) {
+  let lines = 
+    list.map(
+      lines,
+      fn(line) { BlamedLine(line.blame, line.indent + indent, line.suffix) }
+    )
+  case list.any(
+    lines,
+    fn(line) { line.indent < 0 }
+  ) {
+    True -> Error(Nil)
+    False -> Ok(lines)
+  }
+}
+
+fn blamed_lines_path_selector_filter(
+  lines: List(BlamedLine),
+  path_selector: #(String, List(#(String, String))),
+  dirname: String,
+) -> Result(List(BlamedLine), FileOrParseError) {
+  let #(path, key_value_pairs) = path_selector
+
+  let prefix = path |> shortname_for_blame(dirname)
+
+  let #(without_prefix_1, remaining) = take_while_not_prefix(lines, prefix)
+  let #(with_prefix, remaining) = take_while_prefix(remaining, prefix)
+  let #(without_prefix_2, remaining) = take_while_not_prefix(remaining, prefix)
+
+  let assert [] = remaining
+
+  use first <- on_error_on_ok(
+    list.first(with_prefix),
+    fn (_) { panic as {"no lines match filename prefix '" <> prefix <> "' in writerly_parser.assemble_blamed_lines"} }
+  )
+
+  let with_prefix_indentation = first.indent
+
+  use without_indent <- on_error_on_ok(
+    add_indent(with_prefix, -with_prefix_indentation),
+    fn (error) { Error(ParseError(WriterlyParseErrorIndentationTooLarge(first.blame, ins(error)))) }
+  )
+
+  let assert [first, ..] = without_indent
+  let assert True = first.indent == 0
+
+  use writerlys <- on_error_on_ok(
+    parse_blamed_lines(without_indent),
+    fn (error) { Error(ParseError(error)) }
+  )
+
+  let with_prefix_remaining =
+    writerlys_path_selector_filter(writerlys, path_selector)
+    |> writerlys_to_blamed_lines_internal(with_prefix_indentation, False)
+
+  use <- on_lazy_true_on_false(
+    list.is_empty(with_prefix_remaining),
+    fn(){ panic as {"no elements in file prefix '" <> prefix <> "' match keys " <> ins(key_value_pairs)} }
+  )
+
+  [
+    without_prefix_1,
+    with_prefix_remaining,
+    without_prefix_2,
+  ]
+  |> list.flatten
+  |> Ok
+}
+
+fn blamed_lines_path_selectors_filter(
+  lines: List(BlamedLine),
+  path_selectors: List(#(String, List(#(String, String)))),
+  dirname: String,
+) -> Result(List(BlamedLine), FileOrParseError) {
+  list.fold(
+    path_selectors,
+    Ok(lines),
+    fn (res, path_selector) {
+      result.then(
+        res,
+        blamed_lines_path_selector_filter(_, path_selector, dirname)
+      )
+    }
+  )
+}
+
+fn shortname_for_blame(
+  path: String,
+  dirname: String,
+) -> String {
+  let length_to_drop = case string.ends_with(dirname, "/") || dirname == "" {
+    True -> string.length(dirname)
+    False -> string.length(dirname) + 1
+  }
+  string.drop_start(path, length_to_drop)
+}
+
 fn blamed_lines_for_file_at_depth(
   pair: #(Int, String),
   dirname: String,
-) -> Result(List(BlamedLine), simplifile.FileError) {
-  let #(depth, filename) = pair
-  let length_to_drop = case dirname == "" {
-    True -> 0
-    False -> string.length(dirname) + 1
+) -> Result(List(BlamedLine), FileOrParseError) {
+  let #(depth, path) = pair
+  let shortname = shortname_for_blame(path, dirname)
+  case shortname == "" {
+    True -> panic as {"no shortname left after removing dirname '" <> dirname <> "' from path '" <> path <> "'"}
+    False -> shortname
   }
-  let shortened_filename_for_blame = string.drop_start(filename, length_to_drop)
 
-  case simplifile.read(filename) {
+  case simplifile.read(path) {
     Ok(string) ->
       Ok(blamedlines.string_to_blamed_lines_hard_mode(
         string,
-        shortened_filename_for_blame,
+        shortname,
         1,
         depth * 4,
       ))
-    Error(error) -> {
-      Error(error)
-    }
+    Error(error) -> Error(FileError(error))
   }
 }
 
@@ -1278,9 +1515,10 @@ fn get_files(
   }
 }
 
-pub fn assemble_blamed_lines(
+pub fn assemble_blamed_lines_advanced_mode(
   dirname: String,
-) -> Result(List(BlamedLine), simplifile.FileError) {
+  path_selectors: List(#(String, List(#(String, String)))),
+) -> Result(List(BlamedLine), FileOrParseError) {
   case get_files(dirname) {
     Ok(#(was_dir, files)) -> {
       files
@@ -1294,8 +1532,26 @@ pub fn assemble_blamed_lines(
       }))
       |> result.all
       |> result.map(list.flatten)
+      |> result.then(blamed_lines_path_selectors_filter(_, path_selectors, dirname))
     }
-    Error(error) -> Error(error)
+    Error(error) -> Error(FileError(error))
+  }
+}
+
+pub fn assemble_blamed_lines(
+  dirname: String,
+) -> Result(List(BlamedLine), FileOrParseError) {
+  assemble_blamed_lines_advanced_mode(dirname, [])
+}
+
+fn on_lazy_true_on_false(
+  z: Bool,
+  on_true: fn() -> a,
+  on_false: fn() -> a,
+) -> a {
+  case z {
+    True -> on_true()
+    False -> on_false()
   }
 }
 
@@ -1316,7 +1572,7 @@ pub fn assemble_and_parse_debug(
 ) -> Result(List(Writerly), FileOrParseError) {
   use assembled <- on_error_on_ok(
     result: assemble_blamed_lines(dir_or_filename),
-    on_error: fn(error) { Error(FileError(error)) },
+    on_error: Error,
   )
 
   use writerlys <- on_error_on_ok(
@@ -1336,7 +1592,10 @@ pub fn assemble_and_parse(
 fn contents_test() {
   let dirname = "test/contents"
 
-  case assemble_blamed_lines(dirname) {
+  case assemble_blamed_lines_advanced_mode(
+    dirname,
+    [#(dirname <> "/chapter1/", [#("handle", "sec1")])]
+  ) {
     Ok(lines) -> {
       case parse_blamed_lines_debug(lines, True) {
         Ok(writerlys) -> {
@@ -1391,7 +1650,7 @@ fn sample_test() {
 }
 
 pub fn main() {
-  let test_content = False
+  let test_content = True
   case test_content {
     True -> contents_test()
     False -> sample_test()
