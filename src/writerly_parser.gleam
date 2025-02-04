@@ -1122,6 +1122,11 @@ pub fn debug_print_writerly(banner: String, writerly: Writerly) {
 //* converting Writerly to string *
 //*********************************
 
+pub fn writerlys_to_blamed_lines(writerlys: List(Writerly)) -> List(BlamedLine) {
+  writerlys
+  |> writerlys_to_blamed_lines_internal(0, False)
+}
+
 pub fn writerlys_to_string(writerlys: List(Writerly)) -> String {
   writerlys
   |> writerlys_to_blamed_lines_internal(0, False)
@@ -1523,7 +1528,7 @@ pub fn assemble_blamed_lines_advanced_mode(
     Ok(#(was_dir, files)) -> {
       files
       |> list.filter(file_is_not_commented)
-      |> list.filter(file_is_not_hidden)
+      // |> list.filter(file_is_not_hidden)
       |> list.sort(string.compare)
       |> list.map(add_tree_depth(_, dirname))
       |> list.map(blamed_lines_for_file_at_depth(_, case was_dir {
@@ -1621,6 +1626,42 @@ fn contents_test() {
     }
   }
 }
+
+//******************
+//* vxml to writerly *
+//******************
+
+// pub type Writerly {
+//   BlankLine(blame: Blame)
+//   Blurb(blame: Blame, lines: List(BlamedContent))
+//   CodeBlock(blame: Blame, annotation: String, lines: List(BlamedContent))
+//   Tag(
+//     blame: Blame,
+//     name: String,
+//     attributes: List(BlamedAttribute),
+//     children: List(Writerly),
+//   )
+// }
+
+fn vxml_to_writerly_internal(vxml: VXML) -> Writerly {
+  case vxml {
+    V(blame, tag, attributes, children) -> {
+      let children = children |> vxmls_to_writerlys
+      Tag(blame, tag, attributes, children)
+
+    }
+    T(blame, blamed_content) -> {
+      Blurb(blame, blamed_content)
+    }
+  }
+
+}
+
+pub fn vxmls_to_writerlys(vxmls: List(VXML)) -> List(Writerly) {
+  vxmls |> list.map(vxml_to_writerly_internal)
+}
+
+
 
 fn sample_test() {
   let filename = "test/sample.emu"
