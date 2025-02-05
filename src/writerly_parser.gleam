@@ -523,56 +523,15 @@ fn tentative_parse_at_indent(
         }
 
         False -> {
-          case suffix_indent < indent {
+          case string.starts_with(suffix, "!!") {
             True -> {
-              case suffix_indent > indent - 4 {
-                True -> {
-                  let error_message =
-                    ins(suffix_indent) <> " spaces before " <> ins(suffix)
-
-                  let error =
-                    TentativeErrorIndentationNotMultipleOfFour(
-                      blame,
-                      error_message,
-                    )
-
-                  let #(siblings, head_after_indent) =
-                    tentative_parse_at_indent(indent, move_forward(head))
-
-                  #(list.prepend(siblings, error), head_after_indent)
-                }
-
-                False -> #([], head)
-              }
+              tentative_parse_at_indent(indent, move_forward(head))
             }
-
-            False ->
-              case suffix_indent > indent {
+            False -> {
+              case suffix_indent < indent {
                 True -> {
-                  let head_after_oversize_indent =
-                    fast_forward_past_lines_of_indent_at_least(
-                      suffix_indent,
-                      head,
-                    )
-
-                  let #(siblings, head_after_indent) =
-                    tentative_parse_at_indent(
-                      indent,
-                      head_after_oversize_indent,
-                    )
-
-                  case suffix_indent % 4 == 0 {
+                  case suffix_indent > indent - 4 {
                     True -> {
-                      let error_message =
-                        string.repeat(" ", suffix_indent) <> suffix
-
-                      let error =
-                        TentativeErrorIndentationTooLarge(blame, error_message)
-
-                      #(list.prepend(siblings, error), head_after_indent)
-                    }
-
-                    False -> {
                       let error_message =
                         ins(suffix_indent) <> " spaces before " <> ins(suffix)
 
@@ -581,138 +540,186 @@ fn tentative_parse_at_indent(
                           blame,
                           error_message,
                         )
+
+                      let #(siblings, head_after_indent) =
+                        tentative_parse_at_indent(indent, move_forward(head))
+
                       #(list.prepend(siblings, error), head_after_indent)
                     }
+
+                    False -> #([], head)
                   }
                 }
 
-                False -> {
-                  let assert True = suffix_indent == indent
-
-                  case nonempty_suffix_diagnostic(suffix) {
-                    Pipe(annotation) -> {
-                      let #(tentative_attributes, head_after_attributes) =
-                        fast_forward_past_attribute_lines_at_indent(
-                          indent + 4,
-                          move_forward(head),
-                        )
-
-                      let #(children, head_after_children) =
-                        tentative_parse_at_indent(
-                          indent + 4,
-                          head_after_attributes,
-                        )
-
-                      let tentative_tag =
-                        TentativeTag(
-                          blame: blame,
-                          tag: check_good_tag_name(string.trim(annotation)),
-                          attributes: tentative_attributes,
-                          children: children,
+                False ->
+                  case suffix_indent > indent {
+                    True -> {
+                      let head_after_oversize_indent =
+                        fast_forward_past_lines_of_indent_at_least(
+                          suffix_indent,
+                          head,
                         )
 
                       let #(siblings, head_after_indent) =
-                        tentative_parse_at_indent(indent, head_after_children)
-
-                      #(
-                        list.prepend(siblings, tentative_tag),
-                        head_after_indent,
-                      )
-                    }
-
-                    TripleBacktick(annotation) ->
-                      case
-                        fast_forward_to_closing_backticks(
+                        tentative_parse_at_indent(
                           indent,
-                          move_forward(head),
+                          head_after_oversize_indent,
                         )
-                      {
-                        Ok(#(contents, head_after_code_block)) -> {
-                          let blame = blame
 
-                          let tentative_code_block =
-                            TentativeCodeBlock(
-                              blame: blame,
-                              annotation: annotation,
-                              contents: contents,
-                            )
+                      case suffix_indent % 4 == 0 {
+                        True -> {
+                          let error_message =
+                            string.repeat(" ", suffix_indent) <> suffix
 
-                          let #(siblings, head_after_indent) =
-                            tentative_parse_at_indent(
-                              indent,
-                              head_after_code_block,
-                            )
+                          let error =
+                            TentativeErrorIndentationTooLarge(blame, error_message)
 
-                          #(
-                            list.prepend(siblings, tentative_code_block),
-                            head_after_indent,
-                          )
+                          #(list.prepend(siblings, error), head_after_indent)
                         }
 
-                        Error(UndesiredAnnotation(
-                          error_line_number,
-                          head_after_error,
-                        )) -> {
+                        False -> {
                           let error_message =
-                            "closing backticks on L"
-                            <> ins(error_line_number)
-                            <> " for backticks opened at L"
-                            <> ins(blame.line_no)
-                            <> " carry unexpected annotation"
+                            ins(suffix_indent) <> " spaces before " <> ins(suffix)
 
-                          let tentative_error =
-                            TentativeErrorCodeBlockAnnotation(
+                          let error =
+                            TentativeErrorIndentationNotMultipleOfFour(
                               blame,
                               error_message,
                             )
+                          #(list.prepend(siblings, error), head_after_indent)
+                        }
+                      }
+                    }
+
+                    False -> {
+                      let assert True = suffix_indent == indent
+
+                      case nonempty_suffix_diagnostic(suffix) {
+                        Pipe(annotation) -> {
+                          let #(tentative_attributes, head_after_attributes) =
+                            fast_forward_past_attribute_lines_at_indent(
+                              indent + 4,
+                              move_forward(head),
+                            )
+
+                          let #(children, head_after_children) =
+                            tentative_parse_at_indent(
+                              indent + 4,
+                              head_after_attributes,
+                            )
+
+                          let tentative_tag =
+                            TentativeTag(
+                              blame: blame,
+                              tag: check_good_tag_name(string.trim(annotation)),
+                              attributes: tentative_attributes,
+                              children: children,
+                            )
 
                           let #(siblings, head_after_indent) =
-                            tentative_parse_at_indent(indent, head_after_error)
+                            tentative_parse_at_indent(indent, head_after_children)
 
                           #(
-                            list.prepend(siblings, tentative_error),
+                            list.prepend(siblings, tentative_tag),
                             head_after_indent,
                           )
                         }
 
-                        Error(NoBackticksFound(head_after_indent)) -> {
-                          let tentative_error =
-                            TentativeErrorNoCodeBlockClosing(blame)
+                        TripleBacktick(annotation) ->
+                          case
+                            fast_forward_to_closing_backticks(
+                              indent,
+                              move_forward(head),
+                            )
+                          {
+                            Ok(#(contents, head_after_code_block)) -> {
+                              let blame = blame
 
-                          #([tentative_error], head_after_indent)
+                              let tentative_code_block =
+                                TentativeCodeBlock(
+                                  blame: blame,
+                                  annotation: annotation,
+                                  contents: contents,
+                                )
+
+                              let #(siblings, head_after_indent) =
+                                tentative_parse_at_indent(
+                                  indent,
+                                  head_after_code_block,
+                                )
+
+                              #(
+                                list.prepend(siblings, tentative_code_block),
+                                head_after_indent,
+                              )
+                            }
+
+                            Error(UndesiredAnnotation(
+                              error_line_number,
+                              head_after_error,
+                            )) -> {
+                              let error_message =
+                                "closing backticks on L"
+                                <> ins(error_line_number)
+                                <> " for backticks opened at L"
+                                <> ins(blame.line_no)
+                                <> " carry unexpected annotation"
+
+                              let tentative_error =
+                                TentativeErrorCodeBlockAnnotation(
+                                  blame,
+                                  error_message,
+                                )
+
+                              let #(siblings, head_after_indent) =
+                                tentative_parse_at_indent(indent, head_after_error)
+
+                              #(
+                                list.prepend(siblings, tentative_error),
+                                head_after_indent,
+                              )
+                            }
+
+                            Error(NoBackticksFound(head_after_indent)) -> {
+                              let tentative_error =
+                                TentativeErrorNoCodeBlockClosing(blame)
+
+                              #([tentative_error], head_after_indent)
+                            }
+                          }
+
+                        Other(_) -> {
+                          let blame = blame
+                          let blamed_content = BlamedContent(blame, suffix)
+
+                          let #(more_blamed_contents, head_after_others) =
+                            fast_forward_past_other_lines_at_indent(
+                              indent,
+                              move_forward(head),
+                            )
+
+                          let tentative_blurb =
+                            TentativeBlurb(
+                              blame: blame,
+                              contents: list.prepend(
+                                more_blamed_contents,
+                                blamed_content,
+                              ),
+                            )
+
+                          let #(siblings, head_after_indent) =
+                            tentative_parse_at_indent(indent, head_after_others)
+
+                          #(
+                            list.prepend(siblings, tentative_blurb),
+                            head_after_indent,
+                          )
                         }
                       }
-
-                    Other(_) -> {
-                      let blame = blame
-                      let blamed_content = BlamedContent(blame, suffix)
-
-                      let #(more_blamed_contents, head_after_others) =
-                        fast_forward_past_other_lines_at_indent(
-                          indent,
-                          move_forward(head),
-                        )
-
-                      let tentative_blurb =
-                        TentativeBlurb(
-                          blame: blame,
-                          contents: list.prepend(
-                            more_blamed_contents,
-                            blamed_content,
-                          ),
-                        )
-
-                      let #(siblings, head_after_indent) =
-                        tentative_parse_at_indent(indent, head_after_others)
-
-                      #(
-                        list.prepend(siblings, tentative_blurb),
-                        head_after_indent,
-                      )
                     }
                   }
-                }
               }
+            }
           }
         }
       }
