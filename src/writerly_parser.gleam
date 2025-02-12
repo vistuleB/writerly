@@ -2,11 +2,12 @@ import blamedlines.{
   type Blame, type BlamedLine, Blame, BlamedLine, prepend_comment as pc,
 }
 import gleam/int
+import gleam/order
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import gleam/string
+import gleam/string.{inspect as ins}
 import gleam/pair
 import simplifile
 
@@ -106,12 +107,6 @@ type TentativeWriterly {
   TentativeErrorCodeBlockAnnotation(blame: Blame, message: String)
   TentativeErrorNoCodeBlockClosing(blame: Blame)
 }
-
-// *************
-// * constants *
-// *************
-
-const ins = string.inspect
 
 // ************
 // * FileHead *
@@ -1081,12 +1076,27 @@ fn writerly_to_blamed_lines_internal(
   }
 }
 
+fn intersperse_blank_lines_between_blurbs(
+  writerlys: List(Writerly)
+) -> List(Writerly) {
+  case writerlys {
+    [] -> []
+    [Blurb(_, _) as b1, Blurb(_, _) as b2, ..rest] -> [
+      b1,
+      BlankLine(b2.blame),
+      ..intersperse_blank_lines_between_blurbs([b2, ..rest])
+    ]
+    [first, ..rest] -> [first, ..intersperse_blank_lines_between_blurbs(rest)]
+  }
+}
+
 fn writerlys_to_blamed_lines_internal(
   writerlys: List(Writerly),
   indentation: Int,
   debug_annotations: Bool,
 ) -> List(BlamedLine) {
   writerlys
+  |> intersperse_blank_lines_between_blurbs
   |> list.map(writerly_to_blamed_lines_internal(
     _,
     indentation,
@@ -1492,14 +1502,19 @@ fn blamed_lines_for_file_at_depth(
   }
 
   case simplifile.read(path) {
-    Ok(string) ->
+    Ok(string) -> {
+      io.println("success reading " <> path)
       Ok(blamedlines.string_to_blamed_lines_hard_mode(
         string,
         shortname,
         1,
         depth * 4,
       ))
-    Error(error) -> Error(FileError(error))
+    }
+    Error(error) -> {
+      io.println("error reading " <> path)
+      Error(FileError(error))
+    }
   }
 }
 
@@ -1513,6 +1528,41 @@ fn get_files(
   }
 }
 
+fn filename_and_dir(path: String) -> #(String, String) {
+  let reversed_path = path |> string.reverse
+  let #(reversed_filename, reversed_dir) = reversed_path
+    |> string.split_once("/")
+    |> result.unwrap(#(reversed_path, ""))
+  #(
+    reversed_dir |> string.reverse,
+    reversed_filename |> string.reverse,
+  )
+}
+
+fn filename_compare(f1: String, f2: String) {
+  case f1 == "__parent.emu" {
+    True -> order.Lt
+    False -> {
+      case f2 == "__parent.emu" {
+        True -> order.Gt
+        False -> string.compare(f1, f2)
+      }
+    }
+  }
+}
+
+fn lexicographic_sort_but_parent_emu_comes_first(path1: String, path2: String) -> order.Order {
+  let #(dir1, f1) = filename_and_dir(path1)
+  let #(dir2, f2) = filename_and_dir(path2)
+  io.debug(f1)
+  io.debug(f2)
+  let dir_order = string.compare(dir1, dir2)
+  case dir_order {
+    order.Eq -> filename_compare(f1, f2)
+    _ -> dir_order
+  }
+}
+
 pub fn assemble_blamed_lines_advanced_mode(
   dirname: String,
   path_selectors: List(#(String, List(#(String, String)))),
@@ -1521,7 +1571,7 @@ pub fn assemble_blamed_lines_advanced_mode(
     Ok(#(was_dir, files)) -> {
       files
       |> list.filter(file_is_not_commented)
-      |> list.sort(string.compare)
+      |> list.sort(lexicographic_sort_but_parent_emu_comes_first)
       |> list.map(add_tree_depth(_, dirname))
       |> list.map(blamed_lines_for_file_at_depth(_, case was_dir {
         True -> dirname
@@ -1619,41 +1669,140 @@ fn contents_test() {
   }
 }
 
-//******************
-//* vxml to writerly *
-//******************
+//***************************************************
+//* vxml to writerly (canonical transformation) (?) *
+//***************************************************
 
-// pub type Writerly {
-//   BlankLine(blame: Blame)
-//   Blurb(blame: Blame, lines: List(BlamedContent))
-//   CodeBlock(blame: Blame, annotation: String, lines: List(BlamedContent))
-//   Tag(
-//     blame: Blame,
-//     name: String,
-//     attributes: List(BlamedAttribute),
-//     children: List(Writerly),
+fn is_whitespace(s: String) -> Bool {
+  string.trim(s) == ""
+}
+
+// fn cut_list_blamed_contents_by_empty_lines_accumulator(
+//   assembled_already: List(List(BlamedContent)),
+//   current_batch: List(BlamedContent),
+//   upcoming: List(BlamedContent),
+// ) -> List(List(BlamedContent)) {
+//   case upcoming {
+//     [] -> [current_batch |> list.reverse, ..assembled_already] |> list.filter(fn(l) {!list.is_empty(l)}) |> list.reverse
+//     [first, ..rest] -> {
+//       case is_whitespace(first.content) {
+//         True -> cut_list_blamed_contents_by_empty_lines_accumulator(
+//           [current_batch |> list.reverse, ..assembled_already],
+//           [],
+//           rest
+//         )
+//         False -> cut_list_blamed_contents_by_empty_lines_accumulator(
+//           assembled_already,
+//           [first, ..current_batch],
+//           rest
+//         )
+//       }
+//     }
+//   }
+// }
+
+// fn cut_list_blamed_contents_by_empty_lines(
+//   contents: List(BlamedContent)
+// ) -> List(List(BlamedContent)) {
+//   cut_list_blamed_contents_by_empty_lines_accumulator([], [], contents)
+// }
+
+// fn trim_text_left(
+//   contents: List(BlamedContent)
+// ) -> List(BlamedContent) {
+//   list.map(
+//     contents,
+//     fn (blamed_content) {
+//       BlamedContent(blamed_content.blame, blamed_content.content |> string.trim_start)
+//     }
 //   )
 // }
 
-fn vxml_to_writerly_internal(vxml: VXML) -> Writerly {
-  case vxml {
-    V(blame, tag, attributes, children) -> {
-      let children = children |> vxmls_to_writerlys
-      Tag(blame, tag, attributes, children)
+fn replace_left_spaces_by_ensp_in_string(
+  s: String
+) -> String {
+  let m = string.trim_start(s)
+  string.repeat("&ensp;", string.length(s) - string.length(m)) <> m
+}
 
+fn replace_left_spaces_by_ensp(
+  contents: List(BlamedContent)
+) -> List(BlamedContent) {
+  list.map(
+    contents,
+    fn (blamed_content) {
+      BlamedContent(blamed_content.blame, blamed_content.content |> replace_left_spaces_by_ensp_in_string)
     }
-    T(blame, blamed_content) -> {
-      Blurb(blame, blamed_content)
+  )
+}
+
+fn process_vxml_t_node(
+  vxml: VXML
+) -> List(Writerly) {
+  let assert T(_, blamed_contents) = vxml
+  blamed_contents
+  |> list.filter(fn(blamed_content) { !is_whitespace(blamed_content.content) })
+  |> replace_left_spaces_by_ensp
+  |> fn (blamed_contents) {
+    case blamed_contents {
+      [] -> []
+      [first, ..] -> [Blurb(first.blame, blamed_contents)]
     }
   }
+}
 
+fn vxml_to_writerly_internal(vxml: VXML) -> List(Writerly) {
+  case vxml {
+    V(blame, tag, attributes, children) -> {
+      case tag == "WriterlyBlankLine" {
+        True -> {
+          let assert True = list.is_empty(attributes)
+          let assert True = list.is_empty(children)
+          [BlankLine(blame)]
+        }
+        False -> {
+          let children = children |> vxmls_to_writerlys
+          [Tag(blame, tag, attributes, children)]
+        }
+      }
+    }
+    T(_, _) -> {
+      vxml |> process_vxml_t_node
+    }
+  }
 }
 
 pub fn vxmls_to_writerlys(vxmls: List(VXML)) -> List(Writerly) {
-  vxmls |> list.map(vxml_to_writerly_internal)
+  vxmls
+  |> list.map(vxml_to_writerly_internal)
+  |> list.flatten
 }
 
+//**************
+// tests/main
+//**************
 
+fn html_test() {
+  let path = "test/ch5_ch.xml"
+
+  use content <- on_error_on_ok(
+    simplifile.read(path),
+    fn (_) { io.println("could not read file " <> path) }
+  )
+
+  use vxml <- on_error_on_ok(
+    vxml_parser.xmlm_based_html_parser(content, path),
+    fn (e) { io.println("xmlm_based_html_parser error: " <> ins(e)) }
+  )
+
+  let writerlys = vxmls_to_writerlys([vxml])
+
+  debug_print_writerlys("", writerlys)
+
+  let _ = simplifile.write("test/ch5_ch.emu", writerlys_to_string(writerlys))
+
+  Nil
+}
 
 fn sample_test() {
   let filename = "test/sample.emu"
@@ -1682,10 +1831,12 @@ fn sample_test() {
   }
 }
 
+pub fn avoid_linter_complaint_about_unused_functions() {
+  contents_test()
+  sample_test()
+  html_test()
+}
+
 pub fn main() {
-  let test_content = True
-  case test_content {
-    True -> contents_test()
-    False -> sample_test()
-  }
+  html_test()
 }
