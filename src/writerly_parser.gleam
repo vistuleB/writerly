@@ -769,7 +769,10 @@ fn parse_blamed_lines_debug(
 pub fn parse_blamed_lines(
   lines: List(BlamedLine),
 ) -> Result(List(Writerly), WriterlyParseError) {
-  parse_blamed_lines_debug(lines, False)
+  io.println("top of wp.parse_blamed_lines")
+  let res = parse_blamed_lines_debug(lines, False)
+  io.println("bottom of wp.parse_blamed_lines")
+  res
 }
 
 //*********************************
@@ -1396,7 +1399,7 @@ fn writerlys_path_selector_filter(
     |> list.key_find(False)
   } {
     Error(Nil) -> Nil
-    Ok(pair) -> panic as {"no matches for selector '" <> {pair |> pair.first } <> "=" <> {pair |> pair.second} <> "' in path " <> path}
+    Ok(pair) -> panic as {"YOUR PANIC MESSAGE: no matches for selector '" <> {pair |> pair.first } <> "=" <> {pair |> pair.second} <> "' in path " <> path}
   }
 
   list_pairs
@@ -1513,7 +1516,7 @@ fn blamed_lines_for_file_at_depth(
 
   case simplifile.read(path) {
     Ok(string) -> {
-      io.println("success reading " <> path)
+      // io.println("writerly_assemble_blamed_lines success reading " <> path)
       Ok(blamedlines.string_to_blamed_lines_hard_mode(
         string,
         shortname,
@@ -1752,7 +1755,12 @@ fn process_vxml_t_node(
 ) -> List(Writerly) {
   let assert T(_, blamed_contents) = vxml
   blamed_contents
-  |> list.filter(fn(blamed_content) { !is_whitespace(blamed_content.content) })
+  |> list.index_map(fn(blamed_content, i) { #(i, blamed_content) })
+  |> list.filter(fn(pair) {
+    let #(index, blamed_content) = pair
+    !is_whitespace(blamed_content.content) || index == 0 || index == list.length(blamed_contents) - 1
+  })
+  |> list.map(fn(pair) { pair |> pair.second })
   |> replace_left_spaces_by_ensp
   |> fn (blamed_contents) {
     case blamed_contents {
