@@ -770,10 +770,7 @@ fn parse_blamed_lines_debug(
 pub fn parse_blamed_lines(
   lines: List(BlamedLine),
 ) -> Result(List(Writerly), WriterlyParseError) {
-  io.println("top of wp.parse_blamed_lines")
-  let res = parse_blamed_lines_debug(lines, False)
-  io.println("bottom of wp.parse_blamed_lines")
-  res
+  parse_blamed_lines_debug(lines, False)
 }
 
 //*********************************
@@ -1219,37 +1216,26 @@ fn file_is_not_commented(path: String) -> Bool {
   !{ string.contains(path, "/#") || string.starts_with(path, "#") }
 }
 
-fn file_spotlighted(spotlighted: List(String), path: String, dir: String) -> Bool {
-  case spotlighted {
-    [] -> True
-    _ -> list.any(spotlighted, fn(x){
-          let is_parent = list.any(path_to_parents(x), fn(parent){
-            path == dir <> parent
-          })
-
-          string.contains(path, x) || is_parent || x == ""
-        })
-  }
+fn is_parent(path: String) -> Bool {
+  string.ends_with(path, "__parent.emu")
 }
 
-fn path_to_parents(path: String) -> List(String) {
-  // "01/01-00-Boolean-circuits.emu"
+fn file_is_parent_or_is_selected(path_selectors: List(String), path: String) -> Bool {
+  is_parent(path) ||
+  path_selectors == [] ||
+  list.any(path_selectors, string.contains(path, _))
+}
 
-  let pieces = {
-    string.split(path, "/") |> list.reverse
-  }
-  case pieces {
-    [] -> []
-    [""] -> []
-    [_, ..rest] -> {
-      let rest_path = string.join(list.reverse(rest), "/")
-      let rest_path = case string.is_empty(rest_path) {
-        True -> ""
-        False -> "/" <> rest_path
-      }
-      [rest_path <> "/__parent.emu", ..path_to_parents(rest_path)]
-    }
-  }
+fn file_is_not_parent_or_has_selected_descendant_or_is_selected(
+  path_selectors: List(String),
+  selected_with_unwanted_parents: List(String),
+  path: String,
+) -> Bool {
+  !is_parent(path) ||
+  path_selectors == [] || list.any(path_selectors, string.contains(path, _)) ||
+  list.any(selected_with_unwanted_parents, fn (x) {
+    !is_parent(x) && string.starts_with(x, path |> string.drop_end(string.length("__parent.emu")))
+  })
 }
 
 fn path_to_parent_file(path: String) -> String {
@@ -1454,7 +1440,6 @@ fn blamed_lines_path_selector_filter(
 
   let prefix = path_selector |> shortname_for_blame(dirname)
   let path_lines = lines |> list.filter(fn(x){
-    io.debug(x.blame.filename)
     x.blame.filename |> string.contains(prefix)
   })
   use first <- on_error_on_ok(
@@ -1568,8 +1553,6 @@ fn filename_compare(f1: String, f2: String) {
 fn lexicographic_sort_but_parent_emu_comes_first(path1: String, path2: String) -> order.Order {
   let #(dir1, f1) = filename_and_dir(path1)
   let #(dir2, f2) = filename_and_dir(path2)
-  io.debug(f1)
-  io.debug(f2)
   let dir_order = string.compare(dir1, dir2)
   case dir_order {
     order.Eq -> filename_compare(f1, f2)
@@ -1581,20 +1564,22 @@ pub fn assemble_blamed_lines_advanced_mode(
   dirname: String,
   path_selectors: List(String),
 ) -> Result(List(BlamedLine), FileOrParseError) {
-  
   case get_files(dirname) {
     Ok(#(was_dir, files)) -> {
-      files
-      |> list.filter(file_is_not_commented)
-      |> list.filter(file_spotlighted(path_selectors, _, dirname))
-      |> list.sort(lexicographic_sort_but_parent_emu_comes_first)
-      |> list.map(add_tree_depth(_, dirname))
-      |> list.map(blamed_lines_for_file_at_depth(_, case was_dir {
-        True -> dirname
-        False -> ""
-      }))
-      |> result.all
-      |> result.map(list.flatten)
+      let selected_with_unwanted_parents = files
+        |> list.filter(file_is_not_commented)
+        |> list.filter(file_is_parent_or_is_selected(path_selectors, _))
+
+      selected_with_unwanted_parents
+        |> list.filter(file_is_not_parent_or_has_selected_descendant_or_is_selected(path_selectors, selected_with_unwanted_parents, _))
+        |> list.sort(lexicographic_sort_but_parent_emu_comes_first)
+        |> list.map(add_tree_depth(_, dirname))
+        |> list.map(blamed_lines_for_file_at_depth(_, case was_dir {
+          True -> dirname
+          False -> ""
+        }))
+        |> result.all
+        |> result.map(list.flatten)
     }
     Error(error) -> Error(FileError(error))
   }
@@ -1606,16 +1591,16 @@ pub fn assemble_blamed_lines(
   assemble_blamed_lines_advanced_mode(dirname, [])
 }
 
-fn on_lazy_true_on_false(
-  z: Bool,
-  on_true: fn() -> a,
-  on_false: fn() -> a,
-) -> a {
-  case z {
-    True -> on_true()
-    False -> on_false()
-  }
-}
+// fn on_lazy_true_on_false(
+//   z: Bool,
+//   on_true: fn() -> a,
+//   on_false: fn() -> a,
+// ) -> a {
+//   case z {
+//     True -> on_true()
+//     False -> on_false()
+//   }
+// }
 
 fn on_error_on_ok(
   result r: Result(a, b),
