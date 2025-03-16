@@ -1215,6 +1215,39 @@ fn file_is_not_commented(path: String) -> Bool {
   !{ string.contains(path, "/#") || string.starts_with(path, "#") }
 }
 
+fn file_spotlighted(spotlighted: List(String), path: String, dir: String) -> Bool {
+  case spotlighted {
+    [] -> True
+    _ -> list.any(spotlighted, fn(x){
+          let is_parent = list.any(path_to_parents(x), fn(parent){
+            path == dir <> parent
+          })
+
+          string.contains(path, x) || is_parent || x == ""
+        })
+  }
+}
+
+fn path_to_parents(path: String) -> List(String) {
+  // "01/01-00-Boolean-circuits.emu"
+
+  let pieces = {
+    string.split(path, "/") |> list.reverse
+  }
+  case pieces {
+    [] -> []
+    [""] -> []
+    [_, ..rest] -> {
+      let rest_path = string.join(list.reverse(rest), "/")
+      let rest_path = case string.is_empty(rest_path) {
+        True -> ""
+        False -> "/" <> rest_path
+      }
+      [rest_path <> "/__parent.emu", ..path_to_parents(rest_path)]
+    }
+  }
+}
+
 fn path_to_parent_file(path: String) -> String {
   let pieces = {
     string.split(path, "/") |> list.reverse
@@ -1411,60 +1444,37 @@ fn add_indent(
 
 fn blamed_lines_path_selector_filter(
   lines: List(BlamedLine),
-  path_selector: #(String, List(#(String, String))),
+  path_selector: String,
   dirname: String,
 ) -> Result(List(BlamedLine), FileOrParseError) {
-  let #(path, key_value_pairs) = path_selector
 
-  let prefix = path |> shortname_for_blame(dirname)
-
-  let #(without_prefix_1, remaining) = take_while_not_prefix(lines, prefix)
-  let #(with_prefix, remaining) = take_while_prefix(remaining, prefix)
-  let #(without_prefix_2, remaining) = take_while_not_prefix(remaining, prefix)
-
-  let assert [] = remaining
-
+  let prefix = path_selector |> shortname_for_blame(dirname)
+  let path_lines = lines |> list.filter(fn(x){
+    io.debug(x.blame.filename)
+    x.blame.filename |> string.contains(prefix)
+  })
   use first <- on_error_on_ok(
-    list.first(with_prefix),
+    list.first(path_lines),
     fn (_) { panic as {"no lines match filename prefix '" <> prefix <> "' in writerly_parser.assemble_blamed_lines"} }
   )
 
-  let with_prefix_indentation = first.indent
+  let path_lines_indentation = first.indent
 
   use without_indent <- on_error_on_ok(
-    add_indent(with_prefix, -with_prefix_indentation),
+    add_indent(path_lines, -path_lines_indentation),
     fn (error) { Error(ParseError(WriterlyParseErrorIndentationTooLarge(first.blame, ins(error)))) }
   )
 
   let assert [first, ..] = without_indent
   let assert True = first.indent == 0
 
-  use writerlys <- on_error_on_ok(
-    parse_blamed_lines(without_indent),
-    fn (error) { Error(ParseError(error)) }
-  )
-
-  let with_prefix_remaining =
-    writerlys_path_selector_filter(writerlys, path_selector)
-    |> writerlys_to_blamed_lines_internal(with_prefix_indentation, False)
-
-  use <- on_lazy_true_on_false(
-    list.is_empty(with_prefix_remaining),
-    fn(){ panic as {"no elements in file prefix '" <> prefix <> "' match keys " <> ins(key_value_pairs)} }
-  )
-
-  [
-    without_prefix_1,
-    with_prefix_remaining,
-    without_prefix_2,
-  ]
-  |> list.flatten
+  without_indent
   |> Ok
 }
 
 fn blamed_lines_path_selectors_filter(
   lines: List(BlamedLine),
-  path_selectors: List(#(String, List(#(String, String)))),
+  path_selectors: List(String),
   dirname: String,
 ) -> Result(List(BlamedLine), FileOrParseError) {
   list.fold(
@@ -1565,12 +1575,14 @@ fn lexicographic_sort_but_parent_emu_comes_first(path1: String, path2: String) -
 
 pub fn assemble_blamed_lines_advanced_mode(
   dirname: String,
-  path_selectors: List(#(String, List(#(String, String)))),
+  path_selectors: List(String),
 ) -> Result(List(BlamedLine), FileOrParseError) {
+  
   case get_files(dirname) {
     Ok(#(was_dir, files)) -> {
       files
       |> list.filter(file_is_not_commented)
+      |> list.filter(file_spotlighted(path_selectors, _, dirname))
       |> list.sort(lexicographic_sort_but_parent_emu_comes_first)
       |> list.map(add_tree_depth(_, dirname))
       |> list.map(blamed_lines_for_file_at_depth(_, case was_dir {
@@ -1579,7 +1591,6 @@ pub fn assemble_blamed_lines_advanced_mode(
       }))
       |> result.all
       |> result.map(list.flatten)
-      |> result.then(blamed_lines_path_selectors_filter(_, path_selectors, dirname))
     }
     Error(error) -> Error(FileError(error))
   }
@@ -1641,7 +1652,7 @@ fn contents_test() {
 
   case assemble_blamed_lines_advanced_mode(
     dirname,
-    [#(dirname <> "/chapter1/", [#("handle", "sec1")])]
+    [dirname <> "/chapter1/section3"]
   ) {
     Ok(lines) -> {
       case parse_blamed_lines_debug(lines, True) {
@@ -1833,10 +1844,10 @@ fn sample_test() {
 
 pub fn avoid_linter_complaint_about_unused_functions() {
   contents_test()
-  sample_test()
-  html_test()
+  // sample_test()
+  // html_test()
 }
 
 pub fn main() {
-  html_test()
+   contents_test()
 }
