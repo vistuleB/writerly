@@ -2,15 +2,14 @@ import blamedlines.{
   type Blame, type BlamedLine, Blame, BlamedLine, prepend_comment as pc,
 }
 import gleam/int
-import gleam/order
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
+import gleam/pair
 import gleam/result
 import gleam/string.{inspect as ins}
-import gleam/pair
 import simplifile
-
 
 // ****************
 // * public types *
@@ -194,8 +193,7 @@ fn parse_from_tentative(
     TentativeErrorIndentationNotMultipleOfFour(blame, message) ->
       Error(WriterlyParseErrorIndentationNotMultipleOfFour(blame, message))
 
-    TentativeErrorNoCodeBlockClosing(blame) ->
-      Error(WriterlyParseError(blame))
+    TentativeErrorNoCodeBlockClosing(blame) -> Error(WriterlyParseError(blame))
 
     TentativeBlankLine(blame) -> Ok(BlankLine(blame))
 
@@ -725,7 +723,10 @@ fn tentative_parse_blamed_lines(
   head: FileHead,
   debug: Bool,
 ) -> List(TentativeWriterly) {
-  let head = list.filter(head, fn(blamed_line) {!string.starts_with(blamed_line.suffix, "!!")})
+  let head =
+    list.filter(head, fn(blamed_line) {
+      !string.starts_with(blamed_line.suffix, "!!")
+    })
   let #(parsed, final_head) = tentative_parse_at_indent(0, head)
   let assert True = list.is_empty(final_head)
 
@@ -1078,7 +1079,7 @@ fn writerly_to_blamed_lines_internal(
 }
 
 fn intersperse_blank_lines_between_blurbs(
-  writerlys: List(Writerly)
+  writerlys: List(Writerly),
 ) -> List(Writerly) {
   case writerlys {
     [] -> []
@@ -1220,10 +1221,13 @@ fn is_parent(path: String) -> Bool {
   string.ends_with(path, "__parent.emu")
 }
 
-fn file_is_parent_or_is_selected(path_selectors: List(String), path: String) -> Bool {
-  is_parent(path) ||
-  path_selectors == [] ||
-  list.any(path_selectors, string.contains(path, _))
+fn file_is_parent_or_is_selected(
+  path_selectors: List(String),
+  path: String,
+) -> Bool {
+  is_parent(path)
+  || path_selectors == []
+  || list.any(path_selectors, string.contains(path, _))
 }
 
 fn file_is_not_parent_or_has_selected_descendant_or_is_selected(
@@ -1231,10 +1235,15 @@ fn file_is_not_parent_or_has_selected_descendant_or_is_selected(
   selected_with_unwanted_parents: List(String),
   path: String,
 ) -> Bool {
-  !is_parent(path) ||
-  path_selectors == [] || list.any(path_selectors, string.contains(path, _)) ||
-  list.any(selected_with_unwanted_parents, fn (x) {
-    !is_parent(x) && string.starts_with(x, path |> string.drop_end(string.length("__parent.emu")))
+  !is_parent(path)
+  || path_selectors == []
+  || list.any(path_selectors, string.contains(path, _))
+  || list.any(selected_with_unwanted_parents, fn(x) {
+    !is_parent(x)
+    && string.starts_with(
+      x,
+      path |> string.drop_end(string.length("__parent.emu")),
+    )
   })
 }
 
@@ -1282,40 +1291,23 @@ fn attribute_matches_arg(attr: BlamedAttribute, arg: #(String, String)) -> Bool 
 
 fn key_value_pairs_that_match_attribute(
   attr: BlamedAttribute,
-  args: List(#(String, String))
+  args: List(#(String, String)),
 ) -> List(Bool) {
-  list.map(
-    args,
-    attribute_matches_arg(attr, _)
-  )
+  list.map(args, attribute_matches_arg(attr, _))
 }
 
-fn column_wise_or_pair(
-  l1: List(Bool),
-  l2: List(Bool),
-) -> List(Bool) {
+fn column_wise_or_pair(l1: List(Bool), l2: List(Bool)) -> List(Bool) {
   let assert True = list.length(l1) == list.length(l2)
-  list.map2(
-    l1,
-    l2,
-    fn (b1, b2) { b1 || b2 }
-  )
+  list.map2(l1, l2, fn(b1, b2) { b1 || b2 })
 }
 
-fn column_wise_or(
-  lists: List(List(Bool)),
-  common_length: Int,
-) -> List(Bool) {
-  list.fold(
-    lists,
-    list.repeat(False, common_length),
-    column_wise_or_pair
-  )
+fn column_wise_or(lists: List(List(Bool)), common_length: Int) -> List(Bool) {
+  list.fold(lists, list.repeat(False, common_length), column_wise_or_pair)
 }
 
 fn match_selector_internal(
   writerly: Writerly,
-  key_value_pairs: List(#(String, String))
+  key_value_pairs: List(#(String, String)),
 ) -> #(List(Writerly), List(Bool)) {
   case writerly {
     Tag(blame, tag, attrs, children) -> {
@@ -1325,10 +1317,7 @@ fn match_selector_internal(
         |> column_wise_or(list.length(key_value_pairs))
 
       let list_pairs =
-        list.map(
-          children,
-          match_selector_internal(_, key_value_pairs)
-        )
+        list.map(children, match_selector_internal(_, key_value_pairs))
 
       let final_bools =
         list_pairs
@@ -1336,12 +1325,11 @@ fn match_selector_internal(
         |> column_wise_or(list.length(key_value_pairs))
         |> column_wise_or_pair(bools)
 
-      let assert True = list.all(
-        list_pairs,
-        fn (pair) {
-          { pair |> pair.first |> list.is_empty } == { pair |> pair.second |> list.all(fn(b) {!b})}
-        }
-      )
+      let assert True =
+        list.all(list_pairs, fn(pair) {
+          { pair |> pair.first |> list.is_empty }
+          == { pair |> pair.second |> list.all(fn(b) { !b }) }
+        })
 
       case list.any(bools, fn(b) { b }) {
         True -> #([writerly], final_bools)
@@ -1352,7 +1340,7 @@ fn match_selector_internal(
             |> list.flatten
           case list.is_empty(children) {
             True -> {
-              let assert True = !list.any(final_bools, fn(b) {b})
+              let assert True = !list.any(final_bools, fn(b) { b })
               #([], final_bools)
             }
             False -> #([Tag(blame, tag, attrs, children)], final_bools)
@@ -1365,123 +1353,7 @@ fn match_selector_internal(
   }
 }
 
-fn writerlys_path_selector_filter(
-  writerlys: List(Writerly),
-  path_selector: #(String, List(#(String, String)))
-) -> List(Writerly) {
-  let #(path, key_value_pairs) = path_selector
-
-  let list_pairs = list.map(
-    writerlys,
-    match_selector_internal(_, key_value_pairs)
-  )
-
-  let bools =
-    list_pairs
-    |> list.map(pair.second)
-    |> column_wise_or(list.length(key_value_pairs))
-
-  case {
-    list.zip(bools, key_value_pairs)
-    |> list.key_find(False)
-  } {
-    Error(Nil) -> Nil
-    Ok(pair) -> panic as {"YOUR PANIC MESSAGE: no matches for selector '" <> {pair |> pair.first } <> "=" <> {pair |> pair.second} <> "' in path " <> path}
-  }
-
-  list_pairs
-  |> list.map(pair.first)
-  |> list.flatten
-}
-
-fn take_while_not_prefix(
-  lines: List(BlamedLine),
-  prefix: String
-) -> #(List(BlamedLine), List(BlamedLine)) {
-  list.split_while(
-    lines,
-    fn(line) { !string.starts_with(line.blame.filename, prefix) }
-  )
-}
-
-fn take_while_prefix(
-  lines: List(BlamedLine),
-  prefix: String
-) -> #(List(BlamedLine), List(BlamedLine)) {
-  list.split_while(
-    lines,
-    fn(line) { string.starts_with(line.blame.filename, prefix) }
-  )
-}
-
-fn add_indent(
-  lines: List(BlamedLine),
-  indent: Int
-) -> Result(List(BlamedLine), Nil) {
-  let lines = 
-    list.map(
-      lines,
-      fn(line) { BlamedLine(line.blame, line.indent + indent, line.suffix) }
-    )
-  case list.any(
-    lines,
-    fn(line) { line.indent < 0 }
-  ) {
-    True -> Error(Nil)
-    False -> Ok(lines)
-  }
-}
-
-fn blamed_lines_path_selector_filter(
-  lines: List(BlamedLine),
-  path_selector: String,
-  dirname: String,
-) -> Result(List(BlamedLine), FileOrParseError) {
-
-  let prefix = path_selector |> shortname_for_blame(dirname)
-  let path_lines = lines |> list.filter(fn(x){
-    x.blame.filename |> string.contains(prefix)
-  })
-  use first <- on_error_on_ok(
-    list.first(path_lines),
-    fn (_) { panic as {"no lines match filename prefix '" <> prefix <> "' in writerly_parser.assemble_blamed_lines"} }
-  )
-
-  let path_lines_indentation = first.indent
-
-  use without_indent <- on_error_on_ok(
-    add_indent(path_lines, -path_lines_indentation),
-    fn (error) { Error(ParseError(WriterlyParseErrorIndentationTooLarge(first.blame, ins(error)))) }
-  )
-
-  let assert [first, ..] = without_indent
-  let assert True = first.indent == 0
-
-  without_indent
-  |> Ok
-}
-
-fn blamed_lines_path_selectors_filter(
-  lines: List(BlamedLine),
-  path_selectors: List(String),
-  dirname: String,
-) -> Result(List(BlamedLine), FileOrParseError) {
-  list.fold(
-    path_selectors,
-    Ok(lines),
-    fn (res, path_selector) {
-      result.then(
-        res,
-        blamed_lines_path_selector_filter(_, path_selector, dirname)
-      )
-    }
-  )
-}
-
-fn shortname_for_blame(
-  path: String,
-  dirname: String,
-) -> String {
+fn shortname_for_blame(path: String, dirname: String) -> String {
   let length_to_drop = case string.ends_with(dirname, "/") || dirname == "" {
     True -> string.length(dirname)
     False -> string.length(dirname) + 1
@@ -1496,7 +1368,14 @@ fn blamed_lines_for_file_at_depth(
   let #(depth, path) = pair
   let shortname = shortname_for_blame(path, dirname)
   case shortname == "" {
-    True -> panic as {"no shortname left after removing dirname '" <> dirname <> "' from path '" <> path <> "'"}
+    True ->
+      panic as {
+        "no shortname left after removing dirname '"
+        <> dirname
+        <> "' from path '"
+        <> path
+        <> "'"
+      }
     False -> shortname
   }
 
@@ -1529,13 +1408,11 @@ fn get_files(
 
 fn filename_and_dir(path: String) -> #(String, String) {
   let reversed_path = path |> string.reverse
-  let #(reversed_filename, reversed_dir) = reversed_path
+  let #(reversed_filename, reversed_dir) =
+    reversed_path
     |> string.split_once("/")
     |> result.unwrap(#(reversed_path, ""))
-  #(
-    reversed_dir |> string.reverse,
-    reversed_filename |> string.reverse,
-  )
+  #(reversed_dir |> string.reverse, reversed_filename |> string.reverse)
 }
 
 fn filename_compare(f1: String, f2: String) {
@@ -1550,7 +1427,10 @@ fn filename_compare(f1: String, f2: String) {
   }
 }
 
-fn lexicographic_sort_but_parent_emu_comes_first(path1: String, path2: String) -> order.Order {
+fn lexicographic_sort_but_parent_emu_comes_first(
+  path1: String,
+  path2: String,
+) -> order.Order {
   let #(dir1, f1) = filename_and_dir(path1)
   let #(dir2, f2) = filename_and_dir(path2)
   let dir_order = string.compare(dir1, dir2)
@@ -1566,20 +1446,29 @@ pub fn assemble_blamed_lines_advanced_mode(
 ) -> Result(List(BlamedLine), FileOrParseError) {
   case get_files(dirname) {
     Ok(#(was_dir, files)) -> {
-      let selected_with_unwanted_parents = files
+      let selected_with_unwanted_parents =
+        files
         |> list.filter(file_is_not_commented)
         |> list.filter(file_is_parent_or_is_selected(path_selectors, _))
 
       selected_with_unwanted_parents
-        |> list.filter(file_is_not_parent_or_has_selected_descendant_or_is_selected(path_selectors, selected_with_unwanted_parents, _))
-        |> list.sort(lexicographic_sort_but_parent_emu_comes_first)
-        |> list.map(add_tree_depth(_, dirname))
-        |> list.map(blamed_lines_for_file_at_depth(_, case was_dir {
+      |> list.filter(
+        file_is_not_parent_or_has_selected_descendant_or_is_selected(
+          path_selectors,
+          selected_with_unwanted_parents,
+          _,
+        ),
+      )
+      |> list.sort(lexicographic_sort_but_parent_emu_comes_first)
+      |> list.map(add_tree_depth(_, dirname))
+      |> list.map(
+        blamed_lines_for_file_at_depth(_, case was_dir {
           True -> dirname
           False -> ""
-        }))
-        |> result.all
-        |> result.map(list.flatten)
+        }),
+      )
+      |> result.all
+      |> result.map(list.flatten)
     }
     Error(error) -> Error(FileError(error))
   }
@@ -1639,10 +1528,11 @@ pub fn assemble_and_parse(
 fn contents_test() {
   let dirname = "test/contents"
 
-  case assemble_blamed_lines_advanced_mode(
-    dirname,
-    [dirname <> "/chapter1/section3"]
-  ) {
+  case
+    assemble_blamed_lines_advanced_mode(dirname, [
+      dirname <> "/chapter1/section3",
+    ])
+  {
     Ok(lines) -> {
       case parse_blamed_lines_debug(lines, True) {
         Ok(writerlys) -> {
@@ -1718,37 +1608,35 @@ fn is_whitespace(s: String) -> Bool {
 //   )
 // }
 
-fn replace_left_spaces_by_ensp_in_string(
-  s: String
-) -> String {
+fn replace_left_spaces_by_ensp_in_string(s: String) -> String {
   let m = string.trim_start(s)
   string.repeat("&ensp;", string.length(s) - string.length(m)) <> m
 }
 
 fn replace_left_spaces_by_ensp(
-  contents: List(BlamedContent)
+  contents: List(BlamedContent),
 ) -> List(BlamedContent) {
-  list.map(
-    contents,
-    fn (blamed_content) {
-      BlamedContent(blamed_content.blame, blamed_content.content |> replace_left_spaces_by_ensp_in_string)
-    }
-  )
+  list.map(contents, fn(blamed_content) {
+    BlamedContent(
+      blamed_content.blame,
+      blamed_content.content |> replace_left_spaces_by_ensp_in_string,
+    )
+  })
 }
 
-fn process_vxml_t_node(
-  vxml: VXML
-) -> List(Writerly) {
+fn process_vxml_t_node(vxml: VXML) -> List(Writerly) {
   let assert T(_, blamed_contents) = vxml
   blamed_contents
   |> list.index_map(fn(blamed_content, i) { #(i, blamed_content) })
   |> list.filter(fn(pair) {
     let #(index, blamed_content) = pair
-    !is_whitespace(blamed_content.content) || index == 0 || index == list.length(blamed_contents) - 1
+    !is_whitespace(blamed_content.content)
+    || index == 0
+    || index == list.length(blamed_contents) - 1
   })
   |> list.map(fn(pair) { pair |> pair.second })
   |> replace_left_spaces_by_ensp
-  |> fn (blamed_contents) {
+  |> fn(blamed_contents) {
     case blamed_contents {
       [] -> []
       [first, ..] -> [Blurb(first.blame, blamed_contents)]
@@ -1787,55 +1675,6 @@ pub fn vxmls_to_writerlys(vxmls: List(VXML)) -> List(Writerly) {
 // tests/main
 //**************
 
-fn html_test() {
-  let path = "test/ch5_ch.xml"
-
-  use content <- on_error_on_ok(
-    simplifile.read(path),
-    fn (_) { io.println("could not read file " <> path) }
-  )
-
-  use vxml <- on_error_on_ok(
-    vxml_parser.xmlm_based_html_parser(content, path),
-    fn (e) { io.println("xmlm_based_html_parser error: " <> ins(e)) }
-  )
-
-  let writerlys = vxmls_to_writerlys([vxml])
-
-  debug_print_writerlys("", writerlys)
-
-  let _ = simplifile.write("test/ch5_ch.emu", writerlys_to_string(writerlys))
-
-  Nil
-}
-
-fn sample_test() {
-  let filename = "test/sample.emu"
-
-  case simplifile.read(filename) {
-    Error(e) -> io.println("Error reading " <> filename <> ": " <> ins(e))
-
-    Ok(file) -> {
-      case parse_string_debug(file, filename, True) {
-        Ok(writerlys) -> {
-          debug_print_writerlys("(writerlys)", writerlys)
-          io.println("")
-          io.println(writerlys_to_string(writerlys))
-          io.println("")
-          debug_print_vxmls("(vxmls)", writerlys |> writerlys_to_vxmls)
-        }
-
-        Error(error) -> {
-          io.println("\nthere was a parsing error:")
-          io.println(ins(error))
-        }
-      }
-
-      Nil
-    }
-  }
-}
-
 pub fn avoid_linter_complaint_about_unused_functions() {
   contents_test()
   // sample_test()
@@ -1843,5 +1682,5 @@ pub fn avoid_linter_complaint_about_unused_functions() {
 }
 
 pub fn main() {
-   contents_test()
+  contents_test()
 }
