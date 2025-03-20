@@ -1179,10 +1179,7 @@ pub fn writerly_to_vxml(t: Writerly) -> VXML {
         children: [],
       )
 
-    Blurb(blame, blamed_contents) ->
-      V(blame: blame, tag: writerly_blurb_vxml_tag, attributes: [], children: [
-        T(blame: blame, contents: blamed_contents),
-      ])
+    Blurb(blame, blamed_contents) -> T(blame: blame, contents: blamed_contents)
 
     CodeBlock(blame, annotation, blamed_contents) ->
       V(
