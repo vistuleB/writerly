@@ -7,8 +7,6 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/pair
-import gleam/order
-import gleam/pair
 import gleam/result
 import gleam/string.{inspect as ins}
 import simplifile
@@ -1086,7 +1084,6 @@ fn writerly_to_blamed_lines_internal(
 
 fn intersperse_blank_lines_between_blurbs(
   writerlys: List(Writerly),
-  writerlys: List(Writerly),
 ) -> List(Writerly) {
   case writerlys {
     [] -> []
@@ -1235,13 +1232,6 @@ fn file_is_parent_or_is_selected(
   is_parent(path)
   || path_selectors == []
   || list.any(path_selectors, string.contains(path, _))
-fn file_is_parent_or_is_selected(
-  path_selectors: List(String),
-  path: String,
-) -> Bool {
-  is_parent(path)
-  || path_selectors == []
-  || list.any(path_selectors, string.contains(path, _))
 }
 
 fn file_is_not_parent_or_has_selected_descendant_or_is_selected(
@@ -1249,15 +1239,6 @@ fn file_is_not_parent_or_has_selected_descendant_or_is_selected(
   selected_with_unwanted_parents: List(String),
   path: String,
 ) -> Bool {
-  !is_parent(path)
-  || path_selectors == []
-  || list.any(path_selectors, string.contains(path, _))
-  || list.any(selected_with_unwanted_parents, fn(x) {
-    !is_parent(x)
-    && string.starts_with(
-      x,
-      path |> string.drop_end(string.length("__parent.emu")),
-    )
   !is_parent(path)
   || path_selectors == []
   || list.any(path_selectors, string.contains(path, _))
@@ -1315,21 +1296,15 @@ fn attribute_matches_arg(attr: BlamedAttribute, arg: #(String, String)) -> Bool 
 fn key_value_pairs_that_match_attribute(
   attr: BlamedAttribute,
   args: List(#(String, String)),
-  args: List(#(String, String)),
 ) -> List(Bool) {
-  list.map(args, attribute_matches_arg(attr, _))
   list.map(args, attribute_matches_arg(attr, _))
 }
 
-fn column_wise_or_pair(l1: List(Bool), l2: List(Bool)) -> List(Bool) {
 fn column_wise_or_pair(l1: List(Bool), l2: List(Bool)) -> List(Bool) {
   let assert True = list.length(l1) == list.length(l2)
   list.map2(l1, l2, fn(b1, b2) { b1 || b2 })
-  list.map2(l1, l2, fn(b1, b2) { b1 || b2 })
 }
 
-fn column_wise_or(lists: List(List(Bool)), common_length: Int) -> List(Bool) {
-  list.fold(lists, list.repeat(False, common_length), column_wise_or_pair)
 fn column_wise_or(lists: List(List(Bool)), common_length: Int) -> List(Bool) {
   list.fold(lists, list.repeat(False, common_length), column_wise_or_pair)
 }
@@ -1359,6 +1334,7 @@ fn match_selector_internal(
           { pair |> pair.first |> list.is_empty }
           == { pair |> pair.second |> list.all(fn(b) { !b }) }
         })
+
       let assert True =
         list.all(list_pairs, fn(pair) {
           { pair |> pair.first |> list.is_empty }
@@ -1389,7 +1365,6 @@ fn match_selector_internal(
 }
 
 fn shortname_for_blame(path: String, dirname: String) -> String {
-fn shortname_for_blame(path: String, dirname: String) -> String {
   let length_to_drop = case string.ends_with(dirname, "/") || dirname == "" {
     True -> string.length(dirname)
     False -> string.length(dirname) + 1
@@ -1404,14 +1379,6 @@ fn blamed_lines_for_file_at_depth(
   let #(depth, path) = pair
   let shortname = shortname_for_blame(path, dirname)
   case shortname == "" {
-    True ->
-      panic as {
-        "no shortname left after removing dirname '"
-        <> dirname
-        <> "' from path '"
-        <> path
-        <> "'"
-      }
     True ->
       panic as {
         "no shortname left after removing dirname '"
@@ -1461,8 +1428,6 @@ fn filename_and_dir(path: String) -> #(String, String) {
   let reversed_path = path |> string.reverse
   let #(reversed_filename, reversed_dir) =
     reversed_path
-  let #(reversed_filename, reversed_dir) =
-    reversed_path
     |> string.split_once("/")
     |> result.unwrap(#(reversed_path, ""))
   #(reversed_dir |> string.reverse, reversed_filename |> string.reverse)
@@ -1484,10 +1449,6 @@ fn lexicographic_sort_but_parent_emu_comes_first(
   path1: String,
   path2: String,
 ) -> order.Order {
-fn lexicographic_sort_but_parent_emu_comes_first(
-  path1: String,
-  path2: String,
-) -> order.Order {
   let #(dir1, f1) = filename_and_dir(path1)
   let #(dir2, f2) = filename_and_dir(path2)
   let dir_order = string.compare(dir1, dir2)
@@ -1505,8 +1466,6 @@ pub fn assemble_blamed_lines_advanced_mode(
     Ok(#(was_dir, files)) -> {
       let selected_with_unwanted_parents =
         files
-      let selected_with_unwanted_parents =
-        files
         |> list.filter(file_is_not_commented)
         |> list.filter(file_is_parent_or_is_selected(path_selectors, _))
 
@@ -1522,23 +1481,8 @@ pub fn assemble_blamed_lines_advanced_mode(
       |> list.map(add_tree_depth(_, dirname))
       |> list.map(
         blamed_lines_for_file_at_depth(_, case was_dir {
-      |> list.filter(
-        file_is_not_parent_or_has_selected_descendant_or_is_selected(
-          path_selectors,
-          selected_with_unwanted_parents,
-          _,
-        ),
-      )
-      |> list.sort(lexicographic_sort_but_parent_emu_comes_first)
-      |> list.map(add_tree_depth(_, dirname))
-      |> list.map(
-        blamed_lines_for_file_at_depth(_, case was_dir {
           True -> dirname
           False -> ""
-        }),
-      )
-      |> result.all
-      |> result.map(list.flatten)
         }),
       )
       |> result.all
@@ -1633,7 +1577,6 @@ fn replace_left_spaces_by_ensp_in_string(s: String) -> String {
 
 fn replace_left_spaces_by_ensp(
   contents: List(BlamedContent),
-  contents: List(BlamedContent),
 ) -> List(BlamedContent) {
   list.map(contents, fn(blamed_content) {
     BlamedContent(
@@ -1650,7 +1593,6 @@ fn replace_left_spaces_by_ensp(
 }
 
 fn process_vxml_t_node(vxml: VXML) -> List(Writerly) {
-fn process_vxml_t_node(vxml: VXML) -> List(Writerly) {
   let assert T(_, blamed_contents) = vxml
   blamed_contents
   |> list.index_map(fn(blamed_content, i) { #(i, blamed_content) })
@@ -1659,13 +1601,9 @@ fn process_vxml_t_node(vxml: VXML) -> List(Writerly) {
     !is_whitespace(blamed_content.content)
     || index == 0
     || index == list.length(blamed_contents) - 1
-    !is_whitespace(blamed_content.content)
-    || index == 0
-    || index == list.length(blamed_contents) - 1
   })
   |> list.map(fn(pair) { pair |> pair.second })
   |> replace_left_spaces_by_ensp
-  |> fn(blamed_contents) {
   |> fn(blamed_contents) {
     case blamed_contents {
       [] -> []
