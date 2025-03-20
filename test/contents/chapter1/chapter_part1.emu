@@ -15,9 +15,13 @@
 
     Paragraph 1.
 
+    Paragraph 2.
+
     |> Example
 
         Hello.
 
     |> Image
         attr1 val1
+
+    Paragraph 3.
