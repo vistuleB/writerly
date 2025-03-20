@@ -1163,8 +1163,6 @@ pub fn writerly_to_string(writerly: Writerly) -> String {
 
 const writerly_blank_line_vxml_tag = "WriterlyBlankLine"
 
-const writerly_blurb_vxml_tag = "WriterlyBlurb"
-
 const writerly_code_block_vxml_tag = "WriterlyCodeBlock"
 
 const writerly_code_block_annotation_vxml_attribute_name = "language"
