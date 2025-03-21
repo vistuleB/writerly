@@ -1,8 +1,6 @@
 |> Section
     handle sec1
 
-    Paragraph 1.
-
     |> Example
 
         Hello.

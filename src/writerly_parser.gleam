@@ -305,7 +305,7 @@ fn fast_forward_past_attribute_lines_at_indent(
 
     Some(BlamedLine(blame, suffix_indent, suffix)) -> {
       case suffix == "" {
-        True -> #([], move_forward(head))
+        True -> #([], head)
 
         False -> {
           case suffix_indent != indent {
@@ -495,6 +495,14 @@ fn check_good_tag_name(proposed_name) -> TentativeTagName {
   }
 }
 
+fn first_non_blank_line_is_blurb(nodes: List(TentativeWriterly)) -> Bool {
+  case nodes {
+    [TentativeBlankLine(_), ..rest] -> first_non_blank_line_is_blurb(rest)
+    [TentativeBlurb(_, _), ..] -> True
+    _ -> False
+  }
+}
+
 fn tentative_parse_at_indent(
   indent: Int,
   head: FileHead,
@@ -596,6 +604,17 @@ fn tentative_parse_at_indent(
                           indent + 4,
                           head_after_attributes,
                         )
+
+                      // filter out syntax-imposed blank line:
+                      let children = case children {
+                        [TentativeBlankLine(_), ..rest] -> {
+                          case first_non_blank_line_is_blurb(rest) {
+                            True -> rest
+                            False -> children
+                          }
+                        }
+                        _ -> children
+                      }
 
                       let tentative_tag =
                         TentativeTag(
@@ -1693,5 +1712,5 @@ pub fn avoid_linter_complaint_about_unused_functions() {
 }
 
 pub fn main() {
-  contents_test()
+  sample_test()
 }
