@@ -803,8 +803,13 @@ fn tentative_parse_blamed_lines(
     list.filter(head, fn(blamed_line) {
       !string.starts_with(blamed_line.suffix, "!!")
     })
-  let #(parsed, final_blank_lines, final_head) = tentative_parse_at_indent(0, head)
-  let parsed = list.append(parsed, final_blank_lines)
+  let #(parsed, _, final_head) = tentative_parse_at_indent(0, head)
+  let parsed = list.drop_while(parsed, fn (writerly) {
+    case writerly {
+      TentativeBlankLine(_) -> True
+      _ -> False
+    }
+  })
   let assert True = list.is_empty(final_head)
 
   case debug {
