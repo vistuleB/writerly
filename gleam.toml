@@ -2,8 +2,8 @@ name = "writerly_parser"
 version = "1.0.0"
 
 [dependencies]
-blamedlines = { git = "git@github.com:vistuleB/blamedlines", ref = "main" }
-vxml_parser = { git = "git@github.com:vistuleB/vxml_parser", ref = "main" }
+blamedlines = { "path" = "../blamedlines" }
+vxml_parser = { "path" = "../vxml_parser" }
 
 gleam_stdlib = ">= 0.34.0 and < 2.0.0"
 simplifile = ">= 2.1.0 and < 3.0.0"
