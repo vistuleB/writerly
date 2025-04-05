@@ -1,4 +1,4 @@
-# writerly_parser
+# writerly
 
 ## Intro
 
