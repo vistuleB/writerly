@@ -1,6 +1,3 @@
-import blamedlines.{
-  type Blame, type BlamedLine, Blame, BlamedLine, prepend_comment as pc,
-}
 import gleam/int
 import gleam/io
 import gleam/list
@@ -10,15 +7,12 @@ import gleam/pair
 import gleam/result
 import gleam/string.{inspect as ins}
 import simplifile
+import blamedlines.{type Blame, type BlamedLine, Blame, BlamedLine, prepend_comment as pc}
+import vxml.{type BlamedAttribute, type BlamedContent, type VXML, BlamedAttribute, BlamedContent, T, V, debug_print_vxmls}
 
 // ****************
 // * public types *
 // ****************
-
-import vxml_parser.{
-  type BlamedAttribute, type BlamedContent, type VXML, BlamedAttribute,
-  BlamedContent, T, V, debug_print_vxmls,
-}
 
 pub type Writerly {
   BlankLine(blame: Blame)
@@ -1733,7 +1727,7 @@ fn html_test() {
   })
 
   use vxml <- on_error_on_ok(
-    vxml_parser.xmlm_based_html_parser(content, path),
+    vxml.xmlm_based_html_parser(content, path),
     fn(e) { io.println("xmlm_based_html_parser error: " <> ins(e)) },
   )
 
