@@ -1,3 +1,6 @@
+import blamedlines.{
+  type Blame, type BlamedLine, Blame, BlamedLine, prepend_comment as pc,
+}
 import gleam/int
 import gleam/io
 import gleam/list
@@ -7,8 +10,10 @@ import gleam/pair
 import gleam/result
 import gleam/string.{inspect as ins}
 import simplifile
-import blamedlines.{type Blame, type BlamedLine, Blame, BlamedLine, prepend_comment as pc}
-import vxml.{type BlamedAttribute, type BlamedContent, type VXML, BlamedAttribute, BlamedContent, T, V, debug_print_vxmls}
+import vxml.{
+  type BlamedAttribute, type BlamedContent, type VXML, BlamedAttribute,
+  BlamedContent, T, V, debug_print_vxmls,
+}
 
 // ****************
 // * public types *
@@ -489,9 +494,12 @@ fn check_good_tag_name(proposed_name) -> TentativeTagName {
   }
 }
 
-fn tentative_first_non_blank_line_is_blurb(nodes: List(TentativeWriterly)) -> Bool {
+fn tentative_first_non_blank_line_is_blurb(
+  nodes: List(TentativeWriterly),
+) -> Bool {
   case nodes {
-    [TentativeBlankLine(_), ..rest] -> tentative_first_non_blank_line_is_blurb(rest)
+    [TentativeBlankLine(_), ..rest] ->
+      tentative_first_non_blank_line_is_blurb(rest)
     [TentativeBlurb(_, _), ..] -> True
     _ -> False
   }
@@ -508,23 +516,19 @@ fn tentative_parse_at_indent(
       case suffix == "" {
         True -> {
           let tentative_blank_line = TentativeBlankLine(blame)
-          let #(
-            siblings, 
-            siblings_trailing_blank_lines,
-            remainder_after_indent
-          ) =
+          let #(siblings, siblings_trailing_blank_lines, remainder_after_indent) =
             tentative_parse_at_indent(indent, move_forward(head))
 
           case siblings {
             [] -> #(
               siblings,
               list.prepend(siblings_trailing_blank_lines, tentative_blank_line),
-              remainder_after_indent
+              remainder_after_indent,
             )
             _ -> #(
               list.prepend(siblings, tentative_blank_line),
               siblings_trailing_blank_lines,
-              remainder_after_indent
+              remainder_after_indent,
             )
           }
         }
@@ -546,14 +550,13 @@ fn tentative_parse_at_indent(
                   let #(
                     siblings,
                     siblings_trailing_blank_lines,
-                    head_after_indent
-                  ) =
-                    tentative_parse_at_indent(indent, move_forward(head))
+                    head_after_indent,
+                  ) = tentative_parse_at_indent(indent, move_forward(head))
 
                   #(
                     list.prepend(siblings, error),
                     siblings_trailing_blank_lines,
-                    head_after_indent
+                    head_after_indent,
                   )
                 }
 
@@ -571,9 +574,9 @@ fn tentative_parse_at_indent(
                     )
 
                   let #(
-                    siblings, 
+                    siblings,
                     siblings_trailing_blank_lines,
-                    head_after_indent
+                    head_after_indent,
                   ) =
                     tentative_parse_at_indent(
                       indent,
@@ -591,7 +594,7 @@ fn tentative_parse_at_indent(
                       #(
                         list.prepend(siblings, error),
                         siblings_trailing_blank_lines,
-                        head_after_indent
+                        head_after_indent,
                       )
                     }
 
@@ -608,7 +611,7 @@ fn tentative_parse_at_indent(
                       #(
                         list.prepend(siblings, error),
                         siblings_trailing_blank_lines,
-                        head_after_indent
+                        head_after_indent,
                       )
                     }
                   }
@@ -628,7 +631,7 @@ fn tentative_parse_at_indent(
                       let #(
                         children,
                         children_trailing_blank_lines,
-                        head_after_children
+                        head_after_children,
                       ) =
                         tentative_parse_at_indent(
                           indent + 4,
@@ -657,14 +660,17 @@ fn tentative_parse_at_indent(
                       let #(
                         siblings,
                         siblings_trailing_blank_lines,
-                        head_after_indent
+                        head_after_indent,
                       ) = tentative_parse_at_indent(indent, head_after_children)
 
                       case siblings {
                         [] -> #(
                           [tentative_tag],
-                          list.append(children_trailing_blank_lines, siblings_trailing_blank_lines),
-                          head_after_indent
+                          list.append(
+                            children_trailing_blank_lines,
+                            siblings_trailing_blank_lines,
+                          ),
+                          head_after_indent,
                         )
                         _ -> #(
                           list.prepend(
@@ -672,7 +678,7 @@ fn tentative_parse_at_indent(
                             tentative_tag,
                           ),
                           siblings_trailing_blank_lines,
-                          head_after_indent
+                          head_after_indent,
                         )
                       }
                     }
@@ -694,7 +700,11 @@ fn tentative_parse_at_indent(
                               contents: contents,
                             )
 
-                          let #(siblings, siblings_trailing_blank_lines, head_after_indent) =
+                          let #(
+                            siblings,
+                            siblings_trailing_blank_lines,
+                            head_after_indent,
+                          ) =
                             tentative_parse_at_indent(
                               indent,
                               head_after_code_block,
@@ -724,7 +734,11 @@ fn tentative_parse_at_indent(
                               error_message,
                             )
 
-                          let #(siblings, siblings_trailing_blank_lines, head_after_indent) =
+                          let #(
+                            siblings,
+                            siblings_trailing_blank_lines,
+                            head_after_indent,
+                          ) =
                             tentative_parse_at_indent(indent, head_after_error)
 
                           #(
@@ -761,8 +775,11 @@ fn tentative_parse_at_indent(
                           ),
                         )
 
-                      let #(siblings, siblings_trailing_blank_lines, head_after_indent) =
-                        tentative_parse_at_indent(indent, head_after_others)
+                      let #(
+                        siblings,
+                        siblings_trailing_blank_lines,
+                        head_after_indent,
+                      ) = tentative_parse_at_indent(indent, head_after_others)
 
                       #(
                         list.prepend(siblings, tentative_blurb),
@@ -798,12 +815,13 @@ fn tentative_parse_blamed_lines(
       !string.starts_with(blamed_line.suffix, "!!")
     })
   let #(parsed, _, final_head) = tentative_parse_at_indent(0, head)
-  let parsed = list.drop_while(parsed, fn (writerly) {
-    case writerly {
-      TentativeBlankLine(_) -> True
-      _ -> False
-    }
-  })
+  let parsed =
+    list.drop_while(parsed, fn(writerly) {
+      case writerly {
+        TentativeBlankLine(_) -> True
+        _ -> False
+      }
+    })
   let assert True = list.is_empty(final_head)
 
   case debug {
@@ -1141,16 +1159,16 @@ fn writerly_to_blamed_lines_internal(
           indentation + 4,
           debug_annotations,
         )
-      let blank_lines = case
-        first_non_blank_line_is_blurb(children)
+      let blank_lines = case first_non_blank_line_is_blurb(children) {
         // && list.length(children_lines) > 0 // <- why was this guy necessary?
-      {
         True -> [
           BlamedLine(
             case debug_annotations {
               False -> blame |> blamedlines.clear_comments
               True ->
-                blame |> blamedlines.clear_comments |> pc("(a-b separation line)")
+                blame
+                |> blamedlines.clear_comments
+                |> pc("(a-b separation line)")
             },
             0,
             "",
@@ -1170,7 +1188,9 @@ fn intersperse_blank_lines_between_blurbs(
     [] -> []
     [Blurb(_, _) as b1, Blurb(_, _) as b2, ..rest] -> [
       b1,
-      BlankLine(b2.blame |> blamedlines.clear_comments |> pc("(b-b separation line)")),
+      BlankLine(
+        b2.blame |> blamedlines.clear_comments |> pc("(b-b separation line)"),
+      ),
       ..intersperse_blank_lines_between_blurbs([b2, ..rest])
     ]
     [first, ..rest] -> [first, ..intersperse_blank_lines_between_blurbs(rest)]
@@ -1726,10 +1746,9 @@ fn html_test() {
     io.println("could not read file " <> path)
   })
 
-  use vxml <- on_error_on_ok(
-    vxml.xmlm_based_html_parser(content, path),
-    fn(e) { io.println("xmlm_based_html_parser error: " <> ins(e)) },
-  )
+  use vxml <- on_error_on_ok(vxml.xmlm_based_html_parser(content, path), fn(e) {
+    io.println("xmlm_based_html_parser error: " <> ins(e))
+  })
 
   let writerlys = vxmls_to_writerlys([vxml])
 
