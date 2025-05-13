@@ -5,10 +5,11 @@
     attr1=val1
 
     |> Child1
-        attr1=val1
+        attr1 = val1
 
 
         some text
+
     |> Child2
 
         |> Grandchild1

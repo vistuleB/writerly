@@ -321,6 +321,9 @@ fn fast_forward_past_attribute_lines_at_indent(
                   let attribute_pair =
                     suffix
                     |> string.split_once("=")
+                    |> result.map(fn(pair) {
+                      #(string.trim(pair.0), string.trim(pair.1))
+                    })
                     |> result.unwrap(#(suffix, ""))
                     |> tentative_blamed_attribute(blame, _)
 
