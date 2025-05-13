@@ -11,6 +11,10 @@ on three primitives:
 
 Indentation is used to indicate parent-child relationships.
 
+Any block such as key-value attributes, text blurbs, etc. that is a descendant of the parent block is indented by four spaces.
+
+Key-value attributes must be defined on the first line immediately following the parent block.
+
 Lines of whitespace are used to separate key-value attribute definitions from text blurbs, and to separate
 text blurbs from one another.
 
@@ -18,8 +22,8 @@ Here is a sample:
 
 ```
 |> SomeTag
-    attr1 value1
-    attr2 value2
+    attr1=value1
+    attr2=value2
 
     |> Child1
         attr1 here everything after the space is the attribute value, starting with 'here'
@@ -39,7 +43,7 @@ Here is a sample:
             child
 
             beast
-  
+
     |> Child2
 
     here is a code block, with an annotation next to the opening quote (let's see
