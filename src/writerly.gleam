@@ -246,19 +246,11 @@ fn parse_from_tentative(
 fn nonempty_suffix_diagnostic(suffix: String) -> NonemptySuffixDiagnostic {
   let assert False = suffix == ""
 
-  case string.starts_with(suffix, "|>") {
-    True -> Pipe(string.drop_start(suffix, 2))
-
-    False ->
-      case string.starts_with(suffix, "```") {
-        True -> TripleBacktick(string.drop_start(suffix, 3))
-
-        False ->
-          case string.starts_with(suffix, "\\") {
-            True -> BackwardSlash(string.drop_start(suffix, 1))
-            False -> Other(suffix)
-          }
-      }
+  case suffix {
+    "```" <> _ -> TripleBacktick(string.drop_start(suffix, 3))
+    "|>" <> _ -> Pipe(string.drop_start(suffix, 2))
+    "\\" <> _ -> BackwardSlash(string.drop_start(suffix, 1))
+    _ -> Other(suffix)
   }
 }
 
