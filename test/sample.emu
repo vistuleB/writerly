@@ -4,11 +4,16 @@
 |> Root
     attr1=val1
 
+    \       I'm a text line with leading space
+
+
     |> Child1
         attr1 = val1
 
 
         some text
+
+        \ Another line with LESS leading space
 
     |> Child2
 
