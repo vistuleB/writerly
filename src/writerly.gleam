@@ -84,6 +84,7 @@ type ClosingBackTicksError {
 type NonemptySuffixDiagnostic {
   Pipe(annotation: String)
   TripleBacktick(annotation: String)
+  BackwardSlash(annotation: String)
   Other(content: String)
 }
 
@@ -245,15 +246,11 @@ fn parse_from_tentative(
 fn nonempty_suffix_diagnostic(suffix: String) -> NonemptySuffixDiagnostic {
   let assert False = suffix == ""
 
-  case string.starts_with(suffix, "|>") {
-    True -> Pipe(string.drop_start(suffix, 2))
-
-    False ->
-      case string.starts_with(suffix, "```") {
-        True -> TripleBacktick(string.drop_start(suffix, 3))
-
-        False -> Other(suffix)
-      }
+  case suffix {
+    "```" <> _ -> TripleBacktick(string.drop_start(suffix, 3))
+    "|>" <> _ -> Pipe(string.drop_start(suffix, 2))
+    "\\" <> _ -> BackwardSlash(string.drop_start(suffix, 1))
+    _ -> Other(suffix)
   }
 }
 
@@ -314,6 +311,7 @@ fn fast_forward_past_attribute_lines_at_indent(
               case
                 string.starts_with(suffix, "|>")
                 || string.starts_with(suffix, "```")
+                || string.starts_with(suffix, "\\")
               {
                 True -> #([], head)
 
@@ -365,6 +363,7 @@ fn fast_forward_past_other_lines_at_indent(
               case
                 string.starts_with(suffix, "|>")
                 || string.starts_with(suffix, "```")
+                || string.starts_with(suffix, "\\")
               {
                 True -> #([], head)
 
@@ -624,6 +623,38 @@ fn tentative_parse_at_indent(
                   let assert True = suffix_indent == indent
 
                   case nonempty_suffix_diagnostic(suffix) {
+                    BackwardSlash(suffix) -> {
+                      let blame = blame
+                      let blamed_content = BlamedContent(blame, suffix)
+
+                      let #(more_blamed_contents, head_after_others) =
+                        fast_forward_past_other_lines_at_indent(
+                          indent,
+                          move_forward(head),
+                        )
+
+                      let tentative_blurb =
+                        TentativeBlurb(
+                          blame: blame,
+                          contents: list.prepend(
+                            more_blamed_contents,
+                            blamed_content,
+                          ),
+                        )
+
+                      let #(
+                        siblings,
+                        siblings_trailing_blank_lines,
+                        head_after_indent,
+                      ) = tentative_parse_at_indent(indent, head_after_others)
+
+                      #(
+                        list.prepend(siblings, tentative_blurb),
+                        siblings_trailing_blank_lines,
+                        head_after_indent,
+                      )
+                    }
+
                     Pipe(annotation) -> {
                       let #(tentative_attributes, head_after_attributes) =
                         fast_forward_past_attribute_lines_at_indent(
