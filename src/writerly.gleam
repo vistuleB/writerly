@@ -276,7 +276,7 @@ fn tentative_blamed_attribute(
   pair: #(String, String),
 ) -> TentativeBlamedAttribute {
   let #(key, value) = pair
-  let assert False = string.contains(key, " ")
+  let assert False = string.contains(key, "=")
   let assert False = string.is_empty(key)
   let bad_character = contains_one_of(key, [".", "~"])
 
