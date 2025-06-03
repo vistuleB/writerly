@@ -352,32 +352,26 @@ fn fast_forward_past_other_lines_at_indent(
         True -> #([], head)
 
         False -> {
-          case suffix_indent != indent {
+          case suffix_indent != indent
+            || string.starts_with(suffix, "|>")
+            || string.starts_with(suffix, "```")
+          {
             True -> #([], head)
 
-            False ->
-              case
-                string.starts_with(suffix, "|>")
-                || string.starts_with(suffix, "```")
-                || string.starts_with(suffix, "\\ ")
-              {
-                True -> #([], head)
+            False -> {
+              let blamed_content = BlamedContent(blame, suffix)
 
-                False -> {
-                  let blamed_content = BlamedContent(blame, suffix)
+              let #(more_blamed_contents, head_after_others) =
+                fast_forward_past_other_lines_at_indent(
+                  indent,
+                  move_forward(head),
+                )
 
-                  let #(more_blamed_contents, head_after_others) =
-                    fast_forward_past_other_lines_at_indent(
-                      indent,
-                      move_forward(head),
-                    )
-
-                  #(
-                    list.prepend(more_blamed_contents, blamed_content),
-                    head_after_others,
-                  )
-                }
-              }
+              #(
+                list.prepend(more_blamed_contents, blamed_content),
+                head_after_others,
+              )
+            }
           }
         }
       }

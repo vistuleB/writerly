@@ -3,6 +3,8 @@
 
     \ I'm a text line with leading space
     \I'm a text line with a backslash
+    \ I'm a text line with leading backslash
+    hey
 
     \I also start with a backslash
 
