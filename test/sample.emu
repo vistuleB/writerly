@@ -1,11 +1,7 @@
-
-
-
 |> Root
     attr1=val1
 
     \   I'm a text line with leading space
-
 
     |> Child1
         attr1 = val1
@@ -19,3 +15,7 @@
         attr1=val1
 
     some text
+
+    |> Exercise
+        In the solution to Exercise >>TrueOrFalse, we 
+        observed how the difference
