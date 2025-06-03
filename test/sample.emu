@@ -4,6 +4,8 @@
     \ I'm a text line with leading space
     \I'm a text line with a backslash
 
+    \I also start with a backslash
+
     |> Child1
         child1Attr1=child1val1
         child1Attr2=child1val2

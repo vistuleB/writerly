@@ -84,7 +84,6 @@ type ClosingBackTicksError {
 type NonemptySuffixDiagnostic {
   Pipe(annotation: String)
   TripleBacktick(annotation: String)
-  BackwardSlash(annotation: String)
   Other(content: String)
 }
 
@@ -249,7 +248,6 @@ fn nonempty_suffix_diagnostic(suffix: String) -> NonemptySuffixDiagnostic {
   case suffix {
     "```" <> _ -> TripleBacktick(string.drop_start(suffix, 3))
     "|>" <> _ -> Pipe(string.drop_start(suffix, 2))
-    "\\ " <> _ -> BackwardSlash(string.drop_start(suffix, 1))
     _ -> Other(suffix)
   }
 }
@@ -300,53 +298,41 @@ fn fast_forward_past_attribute_lines_at_indent(
     None -> #([], head)
 
     Some(BlamedLine(blame, suffix_indent, suffix)) -> {
-      case suffix == "" {
+      case suffix == "" 
+        || suffix_indent != indent
+        || string.starts_with(suffix, "|>")
+        || string.starts_with(suffix, "```")
+      {
         True -> #([], head)
 
         False -> {
-          case suffix_indent != indent {
-            True -> #([], head)
+          case string.split_once(suffix, "=") {
+            Error(_) -> #([], head)
 
-            False ->
-              case
-                string.starts_with(suffix, "|>")
-                || string.starts_with(suffix, "```")
-                || string.starts_with(suffix, "\\ ")
-              {
+            Ok(#(key, value)) -> {
+              let key = string.trim(key)
+              let value = string.trim(value)
+              case string.contains(key, " ") || key == "" {
                 True -> #([], head)
 
                 False -> {
-                  case string.split_once(suffix, "=") {
-                    Ok(pair) -> {
-                      let key = pair.0
-                      let value = pair.1
-                       
-                      // Check if the key contains spaces, is empty, has trailing spaces, 
-                      // or if value has leading spaces - if so, treat as text content
-                      case string.contains(key, " ") || string.is_empty(key) || key != string.trim(key) || value != string.trim_start(value) {
-                        True -> #([], head)
-                        False -> {
-                          let attribute_pair =
-                            #(key, string.trim(value))
-                            |> tentative_blamed_attribute(blame, _)
+                  let attribute_pair =
+                    #(key, string.trim(value))
+                    |> tentative_blamed_attribute(blame, _)
 
-                          let #(more_attribute_pairs, head_after_attributes) =
-                            fast_forward_past_attribute_lines_at_indent(
-                              indent,
-                              move_forward(head),
-                            )
+                  let #(more_attribute_pairs, head_after_attributes) =
+                    fast_forward_past_attribute_lines_at_indent(
+                      indent,
+                      move_forward(head),
+                    )
 
-                          #(
-                            list.prepend(more_attribute_pairs, attribute_pair),
-                            head_after_attributes,
-                          )
-                        }
-                      }
-                    }
-                    Error(_) -> #([], head)
-                  }
+                  #(
+                    [attribute_pair, ..more_attribute_pairs],
+                    head_after_attributes,
+                  )
                 }
               }
+            }
           }
         }
       }
@@ -633,38 +619,6 @@ fn tentative_parse_at_indent(
                   let assert True = suffix_indent == indent
 
                   case nonempty_suffix_diagnostic(suffix) {
-                    BackwardSlash(suffix) -> {
-                      let blame = blame
-                      let blamed_content = BlamedContent(blame, suffix)
-
-                      let #(more_blamed_contents, head_after_others) =
-                        fast_forward_past_other_lines_at_indent(
-                          indent,
-                          move_forward(head),
-                        )
-
-                      let tentative_blurb =
-                        TentativeBlurb(
-                          blame: blame,
-                          contents: list.prepend(
-                            more_blamed_contents,
-                            blamed_content,
-                          ),
-                        )
-
-                      let #(
-                        siblings,
-                        siblings_trailing_blank_lines,
-                        head_after_indent,
-                      ) = tentative_parse_at_indent(indent, head_after_others)
-
-                      #(
-                        list.prepend(siblings, tentative_blurb),
-                        siblings_trailing_blank_lines,
-                        head_after_indent,
-                      )
-                    }
-
                     Pipe(annotation) -> {
                       let #(tentative_attributes, head_after_attributes) =
                         fast_forward_past_attribute_lines_at_indent(
@@ -802,6 +756,10 @@ fn tentative_parse_at_indent(
 
                     Other(_) -> {
                       let blame = blame
+                      let suffix = case string.starts_with(suffix, "\\ ") {
+                        True -> string.drop_start(suffix, 1)
+                        False -> suffix
+                      }
                       let blamed_content = BlamedContent(blame, suffix)
 
                       let #(more_blamed_contents, head_after_others) =
