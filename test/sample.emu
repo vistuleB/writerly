@@ -1,7 +1,8 @@
 |> Root
     attr1=val1
 
-    \   I'm a text line with leading space
+    \ I'm a text line with leading space
+    \I'm a text line with a backslash
 
     |> Child1
         attr1 = val1
@@ -11,11 +12,12 @@
     |> Child2
 
         |> Grandchild1
+            grandchildAttr=grandchidVal
     |> Child3
         attr1=val1
 
     some text
 
     |> Exercise
-        In the solution to Exercise >>TrueOrFalse, we 
+        In the solution to Exercise >>TrueOrFalse, we
         observed how the difference

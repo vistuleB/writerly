@@ -249,7 +249,7 @@ fn nonempty_suffix_diagnostic(suffix: String) -> NonemptySuffixDiagnostic {
   case suffix {
     "```" <> _ -> TripleBacktick(string.drop_start(suffix, 3))
     "|>" <> _ -> Pipe(string.drop_start(suffix, 2))
-    "\\" <> _ -> BackwardSlash(string.drop_start(suffix, 1))
+    "\\ " <> _ -> BackwardSlash(string.drop_start(suffix, 1))
     _ -> Other(suffix)
   }
 }
@@ -311,7 +311,7 @@ fn fast_forward_past_attribute_lines_at_indent(
               case
                 string.starts_with(suffix, "|>")
                 || string.starts_with(suffix, "```")
-                || string.starts_with(suffix, "\\")
+                || string.starts_with(suffix, "\\ ")
               {
                 True -> #([], head)
 
@@ -363,7 +363,7 @@ fn fast_forward_past_other_lines_at_indent(
               case
                 string.starts_with(suffix, "|>")
                 || string.starts_with(suffix, "```")
-                || string.starts_with(suffix, "\\")
+                || string.starts_with(suffix, "\\ ")
               {
                 True -> #([], head)
 
