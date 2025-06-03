@@ -5,14 +5,18 @@
     \I'm a text line with a backslash
 
     |> Child1
-        attr1 = val1
+        child1Attr1=child1val1
+        child1Attr2=child1val2
+        attr1= invalidAttr
 
         some text
 
     |> Child2
+        = text not an attribute
 
         |> Grandchild1
-            grandchildAttr=grandchidVal
+            Also an invalid=attr
+
     |> Child3
         attr1=val1
 

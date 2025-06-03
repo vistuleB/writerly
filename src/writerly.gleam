@@ -316,25 +316,35 @@ fn fast_forward_past_attribute_lines_at_indent(
                 True -> #([], head)
 
                 False -> {
-                  let attribute_pair =
-                    suffix
-                    |> string.split_once("=")
-                    |> result.map(fn(pair) {
-                      #(string.trim(pair.0), string.trim(pair.1))
-                    })
-                    |> result.unwrap(#(suffix, ""))
-                    |> tentative_blamed_attribute(blame, _)
+                  case string.split_once(suffix, "=") {
+                    Ok(pair) -> {
+                      let key = pair.0
+                      let value = pair.1
+                       
+                      // Check if the key contains spaces, is empty, has trailing spaces, 
+                      // or if value has leading spaces - if so, treat as text content
+                      case string.contains(key, " ") || string.is_empty(key) || key != string.trim(key) || value != string.trim_start(value) {
+                        True -> #([], head)
+                        False -> {
+                          let attribute_pair =
+                            #(key, string.trim(value))
+                            |> tentative_blamed_attribute(blame, _)
 
-                  let #(more_attribute_pairs, head_after_attributes) =
-                    fast_forward_past_attribute_lines_at_indent(
-                      indent,
-                      move_forward(head),
-                    )
+                          let #(more_attribute_pairs, head_after_attributes) =
+                            fast_forward_past_attribute_lines_at_indent(
+                              indent,
+                              move_forward(head),
+                            )
 
-                  #(
-                    list.prepend(more_attribute_pairs, attribute_pair),
-                    head_after_attributes,
-                  )
+                          #(
+                            list.prepend(more_attribute_pairs, attribute_pair),
+                            head_after_attributes,
+                          )
+                        }
+                      }
+                    }
+                    Error(_) -> #([], head)
+                  }
                 }
               }
           }
