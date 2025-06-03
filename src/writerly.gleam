@@ -981,7 +981,7 @@ fn tentative_blamed_attribute_to_blamed_line(
       BlamedLine(
         blamed_attribute.blame,
         indentation,
-        ins(blamed_attribute.key) <> " " <> blamed_attribute.value,
+        ins(blamed_attribute.key) <> "=" <> blamed_attribute.value,
       )
     Error(IllegalAttributeKeyCharacter(bad_key, bad_char)) ->
       BlamedLine(
@@ -1132,7 +1132,7 @@ fn blamed_attribute_to_blamed_line(
   BlamedLine(
     blamed_attribute.blame,
     indentation,
-    blamed_attribute.key <> " " <> blamed_attribute.value,
+    blamed_attribute.key <> "=" <> blamed_attribute.value,
   )
 }
 
