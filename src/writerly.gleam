@@ -1,5 +1,5 @@
 import blamedlines.{
-  type Blame, type BlamedLine, Blame, BlamedLine, prepend_comment as pc,
+  type Blame, type BlamedLine, BlamedLine, prepend_comment as pc,
 }
 import gleam/int
 import gleam/io
@@ -1378,82 +1378,6 @@ fn add_tree_depth(path: String, dirname: String) -> #(Int, String) {
     && path != would_be_parent_path
   }
   #(base_depth + zero_one(must_add_1), path)
-}
-
-fn attribute_matches_arg(attr: BlamedAttribute, arg: #(String, String)) -> Bool {
-  let #(key, value) = arg
-  attr.key == key && attr.value == value
-}
-
-fn key_value_pairs_that_match_attribute(
-  attr: BlamedAttribute,
-  args: List(#(String, String)),
-) -> List(Bool) {
-  list.map(args, attribute_matches_arg(attr, _))
-}
-
-fn column_wise_or_pair(l1: List(Bool), l2: List(Bool)) -> List(Bool) {
-  let assert True = list.length(l1) == list.length(l2)
-  list.map2(l1, l2, fn(b1, b2) { b1 || b2 })
-}
-
-fn column_wise_or(lists: List(List(Bool)), common_length: Int) -> List(Bool) {
-  list.fold(lists, list.repeat(False, common_length), column_wise_or_pair)
-}
-
-fn match_selector_internal(
-  writerly: Writerly,
-  key_value_pairs: List(#(String, String)),
-) -> #(List(Writerly), List(Bool)) {
-  case writerly {
-    Tag(blame, tag, attrs, children) -> {
-      let bools =
-        attrs
-        |> list.map(key_value_pairs_that_match_attribute(_, key_value_pairs))
-        |> column_wise_or(list.length(key_value_pairs))
-
-      let list_pairs =
-        list.map(children, match_selector_internal(_, key_value_pairs))
-
-      let final_bools =
-        list_pairs
-        |> list.map(pair.second)
-        |> column_wise_or(list.length(key_value_pairs))
-        |> column_wise_or_pair(bools)
-
-      let assert True =
-        list.all(list_pairs, fn(pair) {
-          { pair |> pair.first |> list.is_empty }
-          == { pair |> pair.second |> list.all(fn(b) { !b }) }
-        })
-
-      let assert True =
-        list.all(list_pairs, fn(pair) {
-          { pair |> pair.first |> list.is_empty }
-          == { pair |> pair.second |> list.all(fn(b) { !b }) }
-        })
-
-      case list.any(bools, fn(b) { b }) {
-        True -> #([writerly], final_bools)
-        False -> {
-          let children =
-            list_pairs
-            |> list.map(fn(pair) { pair |> pair.first })
-            |> list.flatten
-          case list.is_empty(children) {
-            True -> {
-              let assert True = !list.any(final_bools, fn(b) { b })
-              let assert True = !list.any(final_bools, fn(b) { b })
-              #([], final_bools)
-            }
-            False -> #([Tag(blame, tag, attrs, children)], final_bools)
-          }
-        }
-      }
-    }
-
-    _ -> #([], list.repeat(False, list.length(key_value_pairs)))
-  }
 }
 
 fn shortname_for_blame(path: String, dirname: String) -> String {
