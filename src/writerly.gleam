@@ -1314,7 +1314,7 @@ fn file_is_not_commented(path: String) -> Bool {
 }
 
 fn is_parent(path: String) -> Bool {
-  string.ends_with(path, "__parent.emu")
+  string.ends_with(path, "__parent.emu") || string.ends_with(path, "__parent.wly")
 }
 
 fn file_is_parent_or_is_selected(
@@ -1343,13 +1343,13 @@ fn file_is_not_parent_or_has_selected_descendant_or_is_selected(
   })
 }
 
-fn path_to_parent_file(path: String) -> String {
+fn parent_path_without_extension(path: String) -> String {
   let pieces = {
     string.split(path, "/") |> list.reverse
   }
   case pieces {
     [] -> "wut?"
-    [_, ..rest] -> string.join(list.reverse(rest), "/") <> "/__parent.emu"
+    [_, ..rest] -> string.join(list.reverse(rest), "/") <> "/__parent."
   }
 }
 
@@ -1372,10 +1372,13 @@ fn zero_one(b: Bool) -> Int {
 
 fn add_tree_depth(path: String, dirname: String) -> #(Int, String) {
   let base_depth = depth_in_directory_tree(path, dirname)
-  let would_be_parent_path = path_to_parent_file(path)
+  let would_be_parent_path = parent_path_without_extension(path)
   let must_add_1 = {
-    { simplifile.is_file(would_be_parent_path) |> result.unwrap(False) }
-    && path != would_be_parent_path
+    {
+      { simplifile.is_file(would_be_parent_path <> "emu") |> result.unwrap(False) } ||
+      { simplifile.is_file(would_be_parent_path <> "wly") |> result.unwrap(False) }
+    }
+    && !is_parent(path)
   }
   #(base_depth + zero_one(must_add_1), path)
 }
@@ -1408,7 +1411,6 @@ fn blamed_lines_for_file_at_depth(
 
   case simplifile.read(path) {
     Ok(string) -> {
-      // io.println("writerly_assemble_blamed_lines success reading " <> path)
       Ok(blamedlines.string_to_blamed_lines_hard_mode(
         string,
         shortname,
@@ -1450,10 +1452,10 @@ fn filename_and_dir(path: String) -> #(String, String) {
 }
 
 fn filename_compare(f1: String, f2: String) {
-  case f1 == "__parent.emu" {
+  case is_parent(f1) {
     True -> order.Lt
     False -> {
-      case f2 == "__parent.emu" {
+      case is_parent(f2) {
         True -> order.Gt
         False -> string.compare(f1, f2)
       }
@@ -1713,5 +1715,5 @@ pub fn avoid_linter_complaint_about_unused_functions() {
 }
 
 pub fn main() {
-  sample_test()
+  contents_test()
 }
