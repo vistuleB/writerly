@@ -44,6 +44,7 @@ pub type WriterlyParseError {
 pub type FileOrParseError {
   FileError(simplifile.FileError)
   ParseError(WriterlyParseError)
+  TwoFilesSameName(String) // because we accept both .emu and .wly extensions, but we want to avoid mixing error
 }
 
 // ***************
@@ -1313,6 +1314,10 @@ fn file_is_not_commented(path: String) -> Bool {
   !{ string.contains(path, "/#") || string.starts_with(path, "#") }
 }
 
+fn has_extension(path: String, exts: List(String)) {
+  list.any(exts, string.ends_with(path, _))
+}
+
 fn is_parent(path: String) -> Bool {
   string.ends_with(path, "__parent.emu") || string.ends_with(path, "__parent.wly")
 }
@@ -1334,13 +1339,10 @@ fn file_is_not_parent_or_has_selected_descendant_or_is_selected(
   !is_parent(path)
   || path_selectors == []
   || list.any(path_selectors, string.contains(path, _))
-  || list.any(selected_with_unwanted_parents, fn(x) {
-    !is_parent(x)
-    && string.starts_with(
-      x,
-      path |> string.drop_end(string.length("__parent.emu")),
-    )
-  })
+  || list.any(
+    selected_with_unwanted_parents,
+    fn(x) { !is_parent(x) && string.starts_with(x, path |> string.drop_end(string.length("__parent.emu"))) }
+  )
 }
 
 fn parent_path_without_extension(path: String) -> String {
@@ -1442,7 +1444,7 @@ fn get_files(
   }
 }
 
-fn filename_and_dir(path: String) -> #(String, String) {
+fn dir_and_filename(path: String) -> #(String, String) {
   let reversed_path = path |> string.reverse
   let #(reversed_filename, reversed_dir) =
     reversed_path
@@ -1463,16 +1465,38 @@ fn filename_compare(f1: String, f2: String) {
   }
 }
 
-fn lexicographic_sort_but_parent_emu_comes_first(
+fn lexicographic_sort_but_parent_comes_first(
   path1: String,
   path2: String,
 ) -> order.Order {
-  let #(dir1, f1) = filename_and_dir(path1)
-  let #(dir2, f2) = filename_and_dir(path2)
+  let #(dir1, f1) = dir_and_filename(path1)
+  let #(dir2, f2) = dir_and_filename(path2)
   let dir_order = string.compare(dir1, dir2)
   case dir_order {
     order.Eq -> filename_compare(f1, f2)
     _ -> dir_order
+  }
+}
+
+fn has_duplicate(l: List(String)) -> Option(String) {
+  case l {
+    [] -> None
+    [first, ..rest] -> {
+      case list.contains(rest, first) {
+        True -> Some(first)
+        False -> has_duplicate(rest)
+      }
+    }
+  }
+}
+
+fn check_no_duplicate_files(files: List(String)) -> Result(Nil, FileOrParseError) {
+  let files =
+    files
+    |> list.map(string.drop_end(_, 4))
+  case has_duplicate(files) {
+    Some(dup) -> Error(TwoFilesSameName(dup <> ".emu has both .emu & .wly versions"))
+    None -> Ok(Nil)
   }
 }
 
@@ -1484,28 +1508,38 @@ pub fn assemble_blamed_lines_advanced_mode(
     Ok(#(was_dir, files)) -> {
       let selected_with_unwanted_parents =
         files
+        |> list.filter(has_extension(_, [".emu", ".wly"]))
         |> list.filter(file_is_not_commented)
         |> list.filter(file_is_parent_or_is_selected(path_selectors, _))
 
-      selected_with_unwanted_parents
-      |> list.filter(
-        file_is_not_parent_or_has_selected_descendant_or_is_selected(
-          path_selectors,
-          selected_with_unwanted_parents,
-          _,
-        ),
-      )
-      |> list.sort(lexicographic_sort_but_parent_emu_comes_first)
-      |> list.map(add_tree_depth(_, dirname))
-      |> list.map(
-        blamed_lines_for_file_at_depth(_, case was_dir {
-          True -> dirname
-          False -> ""
-        }),
-      )
-      |> result.all
-      |> result.map(list.flatten)
+      let sorted =
+        selected_with_unwanted_parents
+        |> list.filter(
+          file_is_not_parent_or_has_selected_descendant_or_is_selected(
+            path_selectors,
+            selected_with_unwanted_parents,
+            _,
+          ),
+        )
+        |> list.sort(lexicographic_sort_but_parent_comes_first)
+
+      use _ <- result.then(check_no_duplicate_files(sorted))
+
+      sorted
+        |> list.map(add_tree_depth(_, dirname))
+        |> list.map(
+          blamed_lines_for_file_at_depth(
+            _,
+            case was_dir {
+              True -> dirname
+              False -> ""
+            }
+          ),
+        )
+        |> result.all
+        |> result.map(list.flatten)
     }
+
     Error(error) -> Error(FileError(error))
   }
 }
@@ -1708,6 +1742,15 @@ fn sample_test() {
   }
 }
 
+pub fn digest(w: Writerly) -> String {
+  case w {
+    BlankLine(_) -> "BlankLine"
+    Blurb(_, _) -> ins(w)
+    CodeBlock(_, _, _) -> ins(w)
+    Tag(_, _, _, _) -> "Tag " <> w.name
+  }
+}
+
 pub fn avoid_linter_complaint_about_unused_functions() {
   contents_test()
   sample_test()
@@ -1715,5 +1758,5 @@ pub fn avoid_linter_complaint_about_unused_functions() {
 }
 
 pub fn main() {
-  contents_test()
+  sample_test()
 }

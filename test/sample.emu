@@ -15,6 +15,10 @@
 
         some text
 
+        $$
+        \displaylines
+        $$
+
     |> Child2
         = text not an attribute
 
@@ -29,3 +33,22 @@
     |> Exercise
         In the solution to Exercise >>TrueOrFalse, we
         observed how the difference
+
+        |> TextParent
+            |> ul
+                style=margin:20px 20px 20px 50px;list-style-type:disc;
+
+                |> li
+                    style=margin-bottom:10px;
+
+                    in 
+                    |> span
+                        style=border:1px solid blue
+                        blue
+                    , particle 1, the last particle
+                    to be (noticeably*) “peeled off” from
+                    the circle (*all particles are
+                    instantaneously peeled off from the
+                    circle to _some_ degree, as one
+                    particle's slight deviation affects
+                    the next, that affects the next, etc)
