@@ -1,6 +1,4 @@
-import blamedlines.{
-  type Blame, type BlamedLine, BlamedLine, prepend_comment as pc,
-}
+import blamedlines.{ type Blame, type BlamedLine, BlamedLine, prepend_comment as pc }
 import gleam/int
 import gleam/io
 import gleam/list
@@ -1523,7 +1521,7 @@ pub fn assemble_blamed_lines_advanced_mode(
         )
         |> list.sort(lexicographic_sort_but_parent_comes_first)
 
-      use _ <- result.then(check_no_duplicate_files(sorted))
+      use _ <- result.try(check_no_duplicate_files(sorted))
 
       sorted
         |> list.map(add_tree_depth(_, dirname))
