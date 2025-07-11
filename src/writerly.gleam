@@ -498,17 +498,11 @@ fn tentative_first_non_blank_line_is_blurb(
 }
 
 fn remove_starting_escapes(contents: List(BlamedContent)) -> List(BlamedContent) {
-  let assert Ok(re) = regexp.from_string("^(\\\\+)(\\s?)")
+  let assert Ok(re) = regexp.from_string("^\\\\+\\s")
   list.map(contents, fn(blamed_content) {
-    let new_content = case regexp.scan(re, blamed_content.content) {
-      [] -> blamed_content.content
-      [regexp.Match(_, sub_matches), ..] -> {
-        let assert [Some(slashes), space] = sub_matches
-        case space {
-          Some(_) -> blamed_content.content |> string.drop_start( string.length(slashes) )
-          None -> blamed_content.content
-        }
-      }
+    let new_content = case regexp.check(re, blamed_content.content) {
+      False -> blamed_content.content
+      True -> blamed_content.content |> string.drop_start(1)
     }
     BlamedContent(blamed_content.blame, new_content)
   })
@@ -1728,7 +1722,7 @@ fn html_test() {
 }
 
 fn sample_test() {
-  let filename = "test/sample.emu"
+  let filename = "test/sample.wly"
 
   case simplifile.read(filename) {
     Error(e) -> io.println("Error reading " <> filename <> ": " <> ins(e))
