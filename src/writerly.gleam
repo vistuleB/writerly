@@ -6,6 +6,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/pair
 import gleam/result
+import gleam/regexp
 import gleam/string.{inspect as ins}
 import simplifile
 import vxml.{
@@ -496,6 +497,23 @@ fn tentative_first_non_blank_line_is_blurb(
   }
 }
 
+fn remove_starting_escapes(contents: List(BlamedContent)) -> List(BlamedContent) {
+  let assert Ok(re) = regexp.from_string("^(\\\\+)(\\s?)")
+  list.map(contents, fn(blamed_content) {
+    let new_content = case regexp.scan(re, blamed_content.content) {
+      [] -> blamed_content.content
+      [regexp.Match(_, sub_matches), ..] -> {
+        let assert [Some(slashes), space] = sub_matches
+        case space {
+          Some(_) -> blamed_content.content |> string.drop_start( string.length(slashes) )
+          None -> blamed_content.content
+        }
+      }
+    }
+    BlamedContent(blamed_content.blame, new_content)
+  })
+}
+
 fn tentative_parse_at_indent(
   indent: Int,
   head: FileHead,
@@ -749,10 +767,6 @@ fn tentative_parse_at_indent(
 
                     Other(_) -> {
                       let blame = blame
-                      let suffix = case string.starts_with(suffix, "\\ ") {
-                        True -> string.drop_start(suffix, 1)
-                        False -> suffix
-                      }
                       let blamed_content = BlamedContent(blame, suffix)
 
                       let #(more_blamed_contents, head_after_others) =
@@ -767,7 +781,7 @@ fn tentative_parse_at_indent(
                           contents: list.prepend(
                             more_blamed_contents,
                             blamed_content,
-                          ),
+                          ) |> remove_starting_escapes,
                         )
 
                       let #(
