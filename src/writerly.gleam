@@ -1127,6 +1127,13 @@ fn first_non_blank_line_is_blurb(nodes: List(Writerly)) -> Bool {
   }
 }
 
+fn first_line_is_blank(nodes: List(Writerly)) -> Bool {
+  case nodes {
+    [BlankLine(_), ..] -> True
+    _ -> False
+  }
+}
+
 fn writerly_to_blamed_lines_internal(
   t: Writerly,
   indentation: Int,
@@ -1162,7 +1169,7 @@ fn writerly_to_blamed_lines_internal(
           indentation + 4,
           debug_annotations,
         )
-      let blank_lines = case first_non_blank_line_is_blurb(children) {
+      let blank_lines = case first_non_blank_line_is_blurb(children) && first_line_is_blank(children) {
         // && list.length(children_lines) > 0 // <- why was this guy necessary?
         True -> [
           BlamedLine(
