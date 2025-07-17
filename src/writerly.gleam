@@ -1112,22 +1112,24 @@ fn blamed_attributes_to_blamed_lines(
   blamed_attributes |> list.map(blamed_attribute_to_blamed_line(_, indentation))
 }
 
-// fn starts_with_text_child(writerlys: List(Writerly)) -> Bool {
-//   case writerlys {
-//     [Blurb(_, _), ..] -> True
-//     _ -> False
-//   }
-// }
-
-fn first_non_blank_line_is_blurb(nodes: List(Writerly)) -> Bool {
+fn first_non_blank_line_could_read_as_attribute_value_pair(nodes: List(Writerly)) -> Bool {
   case nodes {
-    [BlankLine(_), ..rest] -> first_non_blank_line_is_blurb(rest)
-    [Blurb(_, _), ..] -> True
+    [BlankLine(_), ..rest] -> first_non_blank_line_could_read_as_attribute_value_pair(rest)
+    [Blurb(_, lines), ..] -> {
+      let assert [first, ..] = lines
+      case string.split_once(first.content, "=") {
+        Error(_) -> False
+        Ok(#(before, _)) -> case string.contains(before, " ") {
+          True -> False
+          False -> True
+        }
+      }
+    }
     _ -> False
   }
 }
 
-fn first_line_is_blank(nodes: List(Writerly)) -> Bool {
+fn starts_with_blank_line(nodes: List(Writerly)) -> Bool {
   case nodes {
     [BlankLine(_), ..] -> True
     _ -> False
@@ -1169,24 +1171,17 @@ fn writerly_to_blamed_lines_internal(
           indentation + 4,
           debug_annotations,
         )
-      let blank_lines = case first_non_blank_line_is_blurb(children) && first_line_is_blank(children) {
-        // && list.length(children_lines) > 0 // <- why was this guy necessary?
-        True -> [
-          BlamedLine(
-            case debug_annotations {
-              False -> blame |> blamedlines.clear_comments
-              True ->
-                blame
-                |> blamedlines.clear_comments
-                |> pc("(a-b separation line)")
-            },
-            0,
-            "",
-          ),
-        ]
+      let buffer_lines = case first_non_blank_line_could_read_as_attribute_value_pair(children) && !starts_with_blank_line(children) {
+        True -> {
+          let blame = case debug_annotations {
+            False -> blame |> blamedlines.clear_comments
+            True -> blame |> blamedlines.clear_comments |> pc("(a-b separation line)")
+          }
+          [BlamedLine(blame, 0, "")]
+        }
         False -> []
       }
-      list.flatten([[tag_line], attribute_lines, blank_lines, children_lines])
+      list.flatten([[tag_line], attribute_lines, buffer_lines, children_lines])
     }
   }
 }
@@ -1635,24 +1630,22 @@ fn is_whitespace(s: String) -> Bool {
   string.trim(s) == ""
 }
 
-fn replace_left_spaces_by_ensp_in_string(s: String) -> String {
+fn escape_left_spaces_in_string(s: String) -> String {
   let m = string.trim_start(s)
-  string.repeat("&ensp;", string.length(s) - string.length(m)) <> m
+  let n = string.length(s) - string.length(m)
+  case n > 0 {
+    True -> "\\" <> string.repeat(" ", n) <> m
+    False -> m
+  }
 }
 
-fn replace_left_spaces_by_ensp(
+fn escape_left_spaces(
   contents: List(BlamedContent),
 ) -> List(BlamedContent) {
   list.map(contents, fn(blamed_content) {
     BlamedContent(
       blamed_content.blame,
-      blamed_content.content |> replace_left_spaces_by_ensp_in_string,
-    )
-  })
-  list.map(contents, fn(blamed_content) {
-    BlamedContent(
-      blamed_content.blame,
-      blamed_content.content |> replace_left_spaces_by_ensp_in_string,
+      blamed_content.content |> escape_left_spaces_in_string,
     )
   })
 }
@@ -1667,8 +1660,8 @@ fn process_vxml_t_node(vxml: VXML) -> List(Writerly) {
     || index == 0
     || index == list.length(blamed_contents) - 1
   })
-  |> list.map(fn(pair) { pair |> pair.second })
-  |> replace_left_spaces_by_ensp
+  |> list.map(pair.second)
+  |> escape_left_spaces
   |> fn(blamed_contents) {
     case blamed_contents {
       [] -> []
@@ -1677,7 +1670,7 @@ fn process_vxml_t_node(vxml: VXML) -> List(Writerly) {
   }
 }
 
-fn vxml_to_writerly_internal(vxml: VXML) -> List(Writerly) {
+pub fn vxml_to_writerly(vxml: VXML) -> List(Writerly) { // it would 'Writerly' not 'List(Writerly)' if for the fact that someone could give an empty text node
   case vxml {
     V(blame, tag, attributes, children) -> {
       case tag == "WriterlyBlankLine" {
@@ -1700,7 +1693,7 @@ fn vxml_to_writerly_internal(vxml: VXML) -> List(Writerly) {
 
 pub fn vxmls_to_writerlys(vxmls: List(VXML)) -> List(Writerly) {
   vxmls
-  |> list.map(vxml_to_writerly_internal)
+  |> list.map(vxml_to_writerly)
   |> list.flatten
 }
 
