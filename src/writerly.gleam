@@ -1119,10 +1119,7 @@ fn first_non_blank_line_could_read_as_attribute_value_pair(nodes: List(Writerly)
       let assert [first, ..] = lines
       case string.split_once(first.content, "=") {
         Error(_) -> False
-        Ok(#(before, _)) -> case string.contains(before, " ") {
-          True -> False
-          False -> True
-        }
+        Ok(#(before, _)) -> !{ string.contains(before, " ") }
       }
     }
     _ -> False
