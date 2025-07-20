@@ -30,20 +30,24 @@ pub type Writerly {
   )
 }
 
-pub type WriterlyParseError {
-  WriterlyParseErrorEmptyTag(Blame)
-  WriterlyParseErrorIllegalTagCharacter(Blame, String, String)
-  WriterlyParseErrorIllegalAttributeKeyCharacter(Blame, String, String)
-  WriterlyParseErrorIndentationTooLarge(Blame, String)
-  WriterlyParseErrorIndentationNotMultipleOfFour(Blame, String)
-  WriterlyParseErrorCodeBlockClosingUnwantedAnnotation(Blame)
-  WriterlyParseError(Blame)
+pub type ParseError {
+  TagEmpty(Blame)
+  TagIllegalCharacter(Blame, String, String)
+  AttributeKeyIllegalCharacter(Blame, String, String)
+  IndentationTooLarge(Blame, String)
+  IndentationNotMultipleOfFour(Blame, String)
+  CodeBlockNotClosed(Blame)
+  CodeBlockUnwantedAnnotationAtClose(Blame)
 }
 
-pub type FileOrParseError {
+pub type AssemblyError {
   FileError(simplifile.FileError)
-  ParseError(WriterlyParseError)
   TwoFilesSameName(String) // because we accept both .emu and .wly extensions, but we want to avoid mixing error
+}
+
+pub type AssemblyOrParseError {
+  ParseError(ParseError)
+  AssemblyError(AssemblyError)
 }
 
 // ***************
@@ -54,8 +58,8 @@ type FileHead =
   List(BlamedLine)
 
 type BadTagName {
-  EmptyTag
-  IllegalTagCharacter(String, String)
+  Empty
+  IllegalCharacter(String, String)
 }
 
 type TentativeTagName =
@@ -103,8 +107,8 @@ type TentativeWriterly {
   )
   TentativeErrorIndentationTooLarge(blame: Blame, message: String)
   TentativeErrorIndentationNotMultipleOfFour(blame: Blame, message: String)
-  TentativeErrorCodeBlockAnnotation(blame: Blame, message: String)
-  TentativeErrorNoCodeBlockClosing(blame: Blame)
+  TentativeErrorCodeBlockUnwantedAnnotationAtClose(blame: Blame, message: String)
+  TentativeErrorCodeBlockNotClosed(blame: Blame)
 }
 
 // ************
@@ -129,11 +133,11 @@ fn move_forward(head: FileHead) -> FileHead {
 
 fn tentative_blamed_attribute_to_blamed_attribute(
   t: TentativeBlamedAttribute,
-) -> Result(BlamedAttribute, WriterlyParseError) {
+) -> Result(BlamedAttribute, ParseError) {
   case t.key {
     Ok(key) -> Ok(BlamedAttribute(blame: t.blame, key: key, value: t.value))
     Error(IllegalAttributeKeyCharacter(original_would_be_key, bad_char)) ->
-      Error(WriterlyParseErrorIllegalAttributeKeyCharacter(
+      Error(AttributeKeyIllegalCharacter(
         t.blame,
         original_would_be_key,
         bad_char,
@@ -143,7 +147,7 @@ fn tentative_blamed_attribute_to_blamed_attribute(
 
 fn tentative_blamed_attributes_to_blamed_attributes(
   attrs: List(TentativeBlamedAttribute),
-) -> Result(List(BlamedAttribute), WriterlyParseError) {
+) -> Result(List(BlamedAttribute), ParseError) {
   case attrs {
     [] -> Ok([])
     [first, ..rest] ->
@@ -162,7 +166,7 @@ fn tentative_blamed_attributes_to_blamed_attributes(
 
 fn parse_from_tentatives(
   tentatives: List(TentativeWriterly),
-) -> Result(List(Writerly), WriterlyParseError) {
+) -> Result(List(Writerly), ParseError) {
   case tentatives {
     [] -> Ok([])
     [first, ..rest] ->
@@ -181,18 +185,18 @@ fn parse_from_tentatives(
 
 fn parse_from_tentative(
   tentative: TentativeWriterly,
-) -> Result(Writerly, WriterlyParseError) {
+) -> Result(Writerly, ParseError) {
   case tentative {
-    TentativeErrorCodeBlockAnnotation(blame, _) ->
-      Error(WriterlyParseErrorCodeBlockClosingUnwantedAnnotation(blame))
+    TentativeErrorCodeBlockUnwantedAnnotationAtClose(blame, _) ->
+      Error(CodeBlockUnwantedAnnotationAtClose(blame))
 
     TentativeErrorIndentationTooLarge(blame, message) ->
-      Error(WriterlyParseErrorIndentationTooLarge(blame, message))
+      Error(IndentationTooLarge(blame, message))
 
     TentativeErrorIndentationNotMultipleOfFour(blame, message) ->
-      Error(WriterlyParseErrorIndentationNotMultipleOfFour(blame, message))
+      Error(IndentationNotMultipleOfFour(blame, message))
 
-    TentativeErrorNoCodeBlockClosing(blame) -> Error(WriterlyParseError(blame))
+    TentativeErrorCodeBlockNotClosed(blame) -> Error(CodeBlockNotClosed(blame))
 
     TentativeBlankLine(blame) -> Ok(BlankLine(blame))
 
@@ -208,10 +212,10 @@ fn parse_from_tentative(
       tentative_children,
     ) ->
       case tentative_name {
-        Error(EmptyTag) -> Error(WriterlyParseErrorEmptyTag(blame))
+        Error(Empty) -> Error(TagEmpty(blame))
 
-        Error(IllegalTagCharacter(original_bad_name, bad_char)) ->
-          Error(WriterlyParseErrorIllegalTagCharacter(
+        Error(IllegalCharacter(original_bad_name, bad_char)) ->
+          Error(TagIllegalCharacter(
             tentative.blame,
             original_bad_name,
             bad_char,
@@ -475,12 +479,12 @@ fn contains_one_of(thing: String, substrings: List(String)) -> String {
 
 fn check_good_tag_name(proposed_name) -> TentativeTagName {
   case string.is_empty(proposed_name) {
-    True -> Error(EmptyTag)
+    True -> Error(Empty)
     False -> {
       let something_illegal = contains_one_of(proposed_name, ["-", ".", " "])
       case string.is_empty(something_illegal) {
         True -> Ok(proposed_name)
-        False -> Error(IllegalTagCharacter(proposed_name, something_illegal))
+        False -> Error(IllegalCharacter(proposed_name, something_illegal))
       }
     }
   }
@@ -732,7 +736,7 @@ fn tentative_parse_at_indent(
                             <> " carry unexpected annotation"
 
                           let tentative_error =
-                            TentativeErrorCodeBlockAnnotation(
+                            TentativeErrorCodeBlockUnwantedAnnotationAtClose(
                               blame,
                               error_message,
                             )
@@ -753,7 +757,7 @@ fn tentative_parse_at_indent(
 
                         Error(NoBackticksFound(head_after_indent)) -> {
                           let tentative_error =
-                            TentativeErrorNoCodeBlockClosing(blame)
+                            TentativeErrorCodeBlockNotClosed(blame)
 
                           #([tentative_error], [], head_after_indent)
                         }
@@ -859,7 +863,7 @@ fn tentative_parse_string(
 fn parse_blamed_lines_debug(
   lines: List(BlamedLine),
   debug: Bool,
-) -> Result(List(Writerly), WriterlyParseError) {
+) -> Result(List(Writerly), ParseError) {
   lines
   |> tentative_parse_blamed_lines(debug)
   |> parse_from_tentatives
@@ -867,7 +871,7 @@ fn parse_blamed_lines_debug(
 
 pub fn parse_blamed_lines(
   lines: List(BlamedLine),
-) -> Result(List(Writerly), WriterlyParseError) {
+) -> Result(List(Writerly), ParseError) {
   parse_blamed_lines_debug(lines, False)
 }
 
@@ -879,7 +883,7 @@ fn parse_string_debug(
   source: String,
   filename: String,
   debug: Bool,
-) -> Result(List(Writerly), WriterlyParseError) {
+) -> Result(List(Writerly), ParseError) {
   tentative_parse_string(source, filename, debug)
   |> parse_from_tentatives
 }
@@ -887,7 +891,7 @@ fn parse_string_debug(
 pub fn parse_string(
   source: String,
   filename: String,
-) -> Result(List(Writerly), WriterlyParseError) {
+) -> Result(List(Writerly), ParseError) {
   parse_string_debug(source, filename, False)
 }
 
@@ -905,7 +909,7 @@ fn tentative_error_blame_and_type_and_message(
     TentativeTag(_, _, _, _) -> panic as "not an error node"
     TentativeErrorIndentationTooLarge(blame, message) -> #(
       blame,
-      "WriterlyParseErrorIndentationTooLarge",
+      "IndentationTooLarge",
       message,
     )
     TentativeErrorIndentationNotMultipleOfFour(blame, message) -> #(
@@ -913,14 +917,14 @@ fn tentative_error_blame_and_type_and_message(
       "IndentationNotMultipleOfFour",
       message,
     )
-    TentativeErrorNoCodeBlockClosing(blame) -> #(
+    TentativeErrorCodeBlockNotClosed(blame) -> #(
       blame,
-      "NoCodeBlockClosing",
+      "CodeBlockNotClosed",
       "",
     )
-    TentativeErrorCodeBlockAnnotation(blame, message) -> #(
+    TentativeErrorCodeBlockUnwantedAnnotationAtClose(blame, message) -> #(
       blame,
-      "CodeBlockAnnotation",
+      "CodeBlockUnwantedAnnotationAtClose",
       message,
     )
   }
@@ -990,7 +994,7 @@ fn tentative_to_blamed_lines_internal(
     TentativeTag(blame, maybe_tag, attributes, children) -> {
       let tag_line = case maybe_tag {
         Ok(tag) -> BlamedLine(blame, indentation, "|> " <> tag)
-        Error(IllegalTagCharacter(bad_tag, bad_char)) ->
+        Error(IllegalCharacter(bad_tag, bad_char)) ->
           BlamedLine(
             blame
               |> blamedlines.prepend_comment(
@@ -999,7 +1003,7 @@ fn tentative_to_blamed_lines_internal(
             indentation,
             "|> " <> bad_tag,
           )
-        Error(EmptyTag) ->
+        Error(Empty) ->
           BlamedLine(
             blame |> blamedlines.prepend_comment("ERROR empty tag"),
             indentation,
@@ -1112,9 +1116,8 @@ fn blamed_attributes_to_blamed_lines(
   blamed_attributes |> list.map(blamed_attribute_to_blamed_line(_, indentation))
 }
 
-fn first_non_blank_line_could_read_as_attribute_value_pair(nodes: List(Writerly)) -> Bool {
+fn first_child_is_blurb_and_first_line_of_blurb_could_be_read_as_attribute_value_pair(nodes: List(Writerly)) -> Bool {
   case nodes {
-    [BlankLine(_), ..rest] -> first_non_blank_line_could_read_as_attribute_value_pair(rest)
     [Blurb(_, lines), ..] -> {
       let assert [first, ..] = lines
       case string.split_once(first.content, "=") {
@@ -1122,13 +1125,6 @@ fn first_non_blank_line_could_read_as_attribute_value_pair(nodes: List(Writerly)
         Ok(#(before, _)) -> !{ string.contains(before, " ") }
       }
     }
-    _ -> False
-  }
-}
-
-fn starts_with_blank_line(nodes: List(Writerly)) -> Bool {
-  case nodes {
-    [BlankLine(_), ..] -> True
     _ -> False
   }
 }
@@ -1168,7 +1164,7 @@ fn writerly_to_blamed_lines_internal(
           indentation + 4,
           debug_annotations,
         )
-      let buffer_lines = case first_non_blank_line_could_read_as_attribute_value_pair(children) && !starts_with_blank_line(children) {
+      let buffer_lines = case first_child_is_blurb_and_first_line_of_blurb_could_be_read_as_attribute_value_pair(children) {
         True -> {
           let blame = case debug_annotations {
             False -> blame |> blamedlines.clear_comments
@@ -1401,7 +1397,7 @@ fn shortname_for_blame(path: String, dirname: String) -> String {
 fn blamed_lines_for_file_at_depth(
   pair: #(Int, String),
   dirname: String,
-) -> Result(List(BlamedLine), FileOrParseError) {
+) -> Result(List(BlamedLine), AssemblyError) {
   let #(depth, path) = pair
   let shortname = shortname_for_blame(path, dirname)
   case shortname == "" {
@@ -1495,7 +1491,7 @@ fn has_duplicate(l: List(String)) -> Option(String) {
   }
 }
 
-fn check_no_duplicate_files(files: List(String)) -> Result(Nil, FileOrParseError) {
+fn check_no_duplicate_files(files: List(String)) -> Result(Nil, AssemblyError) {
   let files =
     files
     |> list.map(string.drop_end(_, 4))
@@ -1508,7 +1504,7 @@ fn check_no_duplicate_files(files: List(String)) -> Result(Nil, FileOrParseError
 pub fn assemble_blamed_lines_advanced_mode(
   dirname: String,
   path_selectors: List(String),
-) -> Result(List(BlamedLine), FileOrParseError) {
+) -> Result(List(BlamedLine), AssemblyError) {
   case get_files(dirname) {
     Ok(#(was_dir, files)) -> {
       let selected_with_unwanted_parents =
@@ -1545,13 +1541,13 @@ pub fn assemble_blamed_lines_advanced_mode(
         |> result.map(list.flatten)
     }
 
-    Error(error) -> Error(FileError(error))
+    Error(e) -> Error(FileError(e))
   }
 }
 
 pub fn assemble_blamed_lines(
   dirname: String,
-) -> Result(List(BlamedLine), FileOrParseError) {
+) -> Result(List(BlamedLine), AssemblyError) {
   assemble_blamed_lines_advanced_mode(dirname, [])
 }
 
@@ -1569,15 +1565,15 @@ fn on_error_on_ok(
 pub fn assemble_and_parse_debug(
   dir_or_filename: String,
   debug: Bool,
-) -> Result(List(Writerly), FileOrParseError) {
+) -> Result(List(Writerly), AssemblyOrParseError) {
   use assembled <- on_error_on_ok(
     result: assemble_blamed_lines(dir_or_filename),
-    on_error: Error,
+    on_error: fn(e) {Error(AssemblyError(e))},
   )
 
   use writerlys <- on_error_on_ok(
     result: parse_blamed_lines_debug(assembled, debug),
-    on_error: fn(error) { Error(ParseError(error)) },
+    on_error: fn(e) {Error(ParseError(e))},
   )
 
   Ok(writerlys)
@@ -1585,7 +1581,7 @@ pub fn assemble_and_parse_debug(
 
 pub fn assemble_and_parse(
   dir_or_filename: String,
-) -> Result(List(Writerly), FileOrParseError) {
+) -> Result(List(Writerly), AssemblyOrParseError) {
   assemble_and_parse_debug(dir_or_filename, False)
 }
 
