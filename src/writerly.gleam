@@ -1122,7 +1122,10 @@ fn first_child_is_blurb_and_first_line_of_blurb_could_be_read_as_attribute_value
       let assert [first, ..] = lines
       case string.split_once(first.content, "=") {
         Error(_) -> False
-        Ok(#(before, _)) -> !string.contains(before, " ") && before != ""
+        Ok(#(before, _)) -> {
+          let before = string.trim(before)
+          !string.contains(before, " ") && before != ""
+        }
       }
     }
     _ -> False
