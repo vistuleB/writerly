@@ -852,7 +852,7 @@ fn tentative_parse_string(
   filename: String,
   debug: Bool,
 ) -> List(TentativeWriterly) {
-  blamedlines.string_to_blamed_lines(source, filename)
+  blamedlines.string_to_blamed_lines(source, filename, 0)
   |> tentative_parse_blamed_lines(debug)
 }
 
@@ -1047,7 +1047,7 @@ fn tentatives_to_blamed_lines_internal(
 fn debug_print_tentatives(banner: String, tentatives: List(TentativeWriterly)) {
   tentatives
   |> tentatives_to_blamed_lines_internal(0)
-  |> blamedlines.blamed_lines_to_table_vanilla_bob_and_jane_sue(banner, _)
+  |> blamedlines.blamed_lines_pretty_printer_no1(banner)
 }
 
 //*************************************
@@ -1220,7 +1220,7 @@ pub fn debug_writerlys_to_string(
   writerlys
   |> list.map(debug_annotate_blames)
   |> writerlys_to_blamed_lines_internal(0, True)
-  |> blamedlines.blamed_lines_to_table_vanilla_bob_and_jane_sue(banner, _)
+  |> blamedlines.blamed_lines_pretty_printer_no1(banner)
 }
 
 pub fn debug_writerly_to_string(banner: String, writerly: Writerly) -> String {
@@ -1416,14 +1416,7 @@ fn blamed_lines_for_file_at_depth(
   }
 
   case simplifile.read(path) {
-    Ok(string) -> {
-      Ok(blamedlines.string_to_blamed_lines_hard_mode(
-        string,
-        shortname,
-        1,
-        depth * 4,
-      ))
-    }
+    Ok(string) -> Ok(blamedlines.string_to_blamed_lines(string, shortname, depth * 4))
     Error(error) -> {
       io.println("error reading " <> path)
       Error(FileError(error))
