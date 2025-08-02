@@ -1659,7 +1659,7 @@ fn process_vxml_t_node(vxml: VXML) -> List(Writerly) {
   }
 }
 
-pub fn vxml_to_writerly(vxml: VXML) -> List(Writerly) { // it would 'Writerly' not 'List(Writerly)' if for the fact that someone could give an empty text node
+pub fn vxml_to_writerlys(vxml: VXML) -> List(Writerly) { // it would 'Writerly' not 'List(Writerly)' if for the fact that someone could give an empty text node
   case vxml {
     V(blame, tag, attributes, children) -> {
       case tag == "WriterlyBlankLine" {
@@ -1682,7 +1682,7 @@ pub fn vxml_to_writerly(vxml: VXML) -> List(Writerly) { // it would 'Writerly' n
 
 pub fn vxmls_to_writerlys(vxmls: List(VXML)) -> List(Writerly) {
   vxmls
-  |> list.map(vxml_to_writerly)
+  |> list.map(vxml_to_writerlys)
   |> list.flatten
 }
 
