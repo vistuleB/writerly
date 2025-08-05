@@ -11,11 +11,28 @@ import gleam/string.{inspect as ins}
 import simplifile
 import vxml.{
   type BlamedAttribute, type BlamedContent, type VXML, BlamedAttribute,
-  BlamedContent, T, V, debug_print_vxmls,
+  BlamedContent, T, V
+} as vx
+
+const debug = False
+
+// ****************
+// * utils
+// ****************
+
+fn on_error_on_ok(
+  result r: Result(a, b),
+  on_error on_error: fn(b) -> c,
+  with_on_ok on_ok: fn(a) -> c,
+) -> c {
+  case r {
+    Error(b) -> on_error(b)
+    Ok(a) -> on_ok(a)
+  }
 }
 
 // ****************
-// * public types *
+// * public types
 // ****************
 
 pub type Writerly {
@@ -164,7 +181,7 @@ fn tentative_blamed_attributes_to_blamed_attributes(
   }
 }
 
-fn parse_from_tentatives(
+fn tentatives_to_writerlys(
   tentatives: List(TentativeWriterly),
 ) -> Result(List(Writerly), ParseError) {
   case tentatives {
@@ -172,7 +189,7 @@ fn parse_from_tentatives(
     [first, ..rest] ->
       case parse_from_tentative(first) {
         Ok(parsed) ->
-          case parse_from_tentatives(rest) {
+          case tentatives_to_writerlys(rest) {
             Ok(parseds) -> Ok(list.prepend(parseds, parsed))
 
             Error(error) -> Error(error)
@@ -230,7 +247,7 @@ fn parse_from_tentative(
             Error(error) -> Error(error)
 
             Ok(attributes) ->
-              case parse_from_tentatives(tentative_children) {
+              case tentatives_to_writerlys(tentative_children) {
                 Error(error) -> Error(error)
 
                 Ok(children) ->
@@ -811,7 +828,6 @@ fn tentative_parse_at_indent(
 
 fn tentative_parse_blamed_lines(
   head: FileHead,
-  debug: Bool,
 ) -> List(TentativeWriterly) {
   let head =
     list.filter(head, fn(blamed_line) {
@@ -834,7 +850,7 @@ fn tentative_parse_blamed_lines(
   case debug {
     True -> {
       io.println("\n\n(tentative parse:)")
-      debug_print_tentatives("(tentative)", parsed)
+      echo_tentatives(parsed, "tentative_parse_blamed_lines")
       io.println("(tentative end)\n\n")
     }
     False -> Nil
@@ -843,56 +859,29 @@ fn tentative_parse_blamed_lines(
   parsed
 }
 
-//**********************************
-//* tentative parsing api (string) *
-//**********************************
-
-fn tentative_parse_string(
-  source: String,
-  filename: String,
-  debug: Bool,
-) -> List(TentativeWriterly) {
-  blamedlines.string_to_blamed_lines(source, filename, 0)
-  |> tentative_parse_blamed_lines(debug)
-}
-
 //***************************************
 //* writerly parsing api (blamed lines) *
 //***************************************
 
-fn parse_blamed_lines_debug(
-  lines: List(BlamedLine),
-  debug: Bool,
-) -> Result(List(Writerly), ParseError) {
-  lines
-  |> tentative_parse_blamed_lines(debug)
-  |> parse_from_tentatives
-}
-
 pub fn parse_blamed_lines(
   lines: List(BlamedLine),
 ) -> Result(List(Writerly), ParseError) {
-  parse_blamed_lines_debug(lines, False)
+  lines
+  |> tentative_parse_blamed_lines
+  |> tentatives_to_writerlys
 }
 
 //*********************************
 //* writerly parsing api (string) *
 //*********************************
 
-fn parse_string_debug(
-  source: String,
-  filename: String,
-  debug: Bool,
-) -> Result(List(Writerly), ParseError) {
-  tentative_parse_string(source, filename, debug)
-  |> parse_from_tentatives
-}
-
-pub fn parse_string(
+fn parse_string(
   source: String,
   filename: String,
 ) -> Result(List(Writerly), ParseError) {
-  parse_string_debug(source, filename, False)
+  source
+  |> blamedlines.string_to_blamed_lines(filename, 0)
+  |> parse_blamed_lines
 }
 
 //**********************
@@ -1044,17 +1033,22 @@ fn tentatives_to_blamed_lines_internal(
   |> list.flatten
 }
 
-fn debug_print_tentatives(banner: String, tentatives: List(TentativeWriterly)) {
+fn echo_tentatives(
+  tentatives: List(TentativeWriterly),
+  banner: String,
+) -> List(TentativeWriterly) {
   tentatives
   |> tentatives_to_blamed_lines_internal(0)
   |> blamedlines.blamed_lines_pretty_printer_no1(banner)
+  |> io.println
+  tentatives
 }
 
 //*************************************
-//* debug printing writerly as itself *
+//* Writerly -> blamed lines internals
 //*************************************
 
-pub fn debug_annotate_blames(writerly: Writerly) -> Writerly {
+pub fn writerly_annotate_blames(writerly: Writerly) -> Writerly {
   case writerly {
     BlankLine(blame) -> BlankLine(blame |> pc("BlankLine"))
     Blurb(blame, blamed_contents) ->
@@ -1093,7 +1087,7 @@ pub fn debug_annotate_blames(writerly: Writerly) -> Writerly {
           )
         }),
         children
-          |> list.map(debug_annotate_blames),
+          |> list.map(writerly_annotate_blames),
       )
   }
 }
@@ -1135,7 +1129,7 @@ fn first_child_is_blurb_and_first_line_of_blurb_could_be_read_as_attribute_value
 fn writerly_to_blamed_lines_internal(
   t: Writerly,
   indentation: Int,
-  debug_annotations: Bool,
+  annotate_blames: Bool,
 ) -> List(BlamedLine) {
   case t {
     BlankLine(blame) -> [BlamedLine(blame, 0, "")]
@@ -1147,7 +1141,7 @@ fn writerly_to_blamed_lines_internal(
         blamed_contents_to_blamed_lines(blamed_contents, indentation),
         [
           BlamedLine(
-            case debug_annotations {
+            case annotate_blames {
               False -> blame
               True -> blame |> pc("CodeBlock end")
             },
@@ -1162,14 +1156,12 @@ fn writerly_to_blamed_lines_internal(
       let attribute_lines =
         blamed_attributes_to_blamed_lines(attributes, indentation + 4)
       let children_lines =
-        writerlys_to_blamed_lines_internal(
-          children,
-          indentation + 4,
-          debug_annotations,
-        )
+        children
+        |> list.map(writerly_to_blamed_lines_internal(_, indentation + 4, annotate_blames))
+        |> list.flatten
       let buffer_lines = case first_child_is_blurb_and_first_line_of_blurb_could_be_read_as_attribute_value_pair(children) {
         True -> {
-          let blame = case debug_annotations {
+          let blame = case annotate_blames {
             False -> blame |> blamedlines.clear_comments
             True -> blame |> blamedlines.clear_comments |> pc("(a-b separation line)")
           }
@@ -1182,76 +1174,20 @@ fn writerly_to_blamed_lines_internal(
   }
 }
 
-fn intersperse_blank_lines_between_blurbs(
-  writerlys: List(Writerly),
-) -> List(Writerly) {
-  case writerlys {
-    [] -> []
-    [Blurb(_, _) as b1, Blurb(_, _) as b2, ..rest] -> [
-      b1,
-      BlankLine(
-        b2.blame |> blamedlines.clear_comments |> pc("(b-b separation line)"),
-      ),
-      ..intersperse_blank_lines_between_blurbs([b2, ..rest])
-    ]
-    [first, ..rest] -> [first, ..intersperse_blank_lines_between_blurbs(rest)]
-  }
-}
+//*********************************
+//* Writerly -> blamed lines api
+//*********************************
 
-fn writerlys_to_blamed_lines_internal(
-  writerlys: List(Writerly),
-  indentation: Int,
-  debug_annotations: Bool,
+pub fn writerly_to_blamed_lines(
+  writerly: Writerly,
 ) -> List(BlamedLine) {
-  writerlys
-  |> intersperse_blank_lines_between_blurbs
-  |> list.map(writerly_to_blamed_lines_internal(
-    _,
-    indentation,
-    debug_annotations,
-  ))
-  |> list.flatten
-}
-
-pub fn debug_writerlys_to_string(
-  banner: String,
-  writerlys: List(Writerly),
-) -> String {
-  writerlys
-  |> list.map(debug_annotate_blames)
-  |> writerlys_to_blamed_lines_internal(0, True)
-  |> blamedlines.blamed_lines_pretty_printer_no1(banner)
-}
-
-pub fn debug_writerly_to_string(banner: String, writerly: Writerly) -> String {
-  [writerly]
-  |> debug_writerlys_to_string(banner, _)
-}
-
-pub fn debug_print_writerlys(banner: String, writerlys: List(Writerly)) {
-  debug_writerlys_to_string(banner, writerlys)
-  |> io.print
-}
-
-pub fn debug_print_writerly(banner: String, writerly: Writerly) {
-  [writerly]
-  |> debug_print_writerlys(banner, _)
+  writerly
+  |> writerly_to_blamed_lines_internal(0, False)
 }
 
 //*********************************
-//* converting Writerly to string *
+//* Writerly -> String api
 //*********************************
-
-pub fn writerlys_to_blamed_lines(writerlys: List(Writerly)) -> List(BlamedLine) {
-  writerlys
-  |> writerlys_to_blamed_lines_internal(0, False)
-}
-
-pub fn writerlys_to_string(writerlys: List(Writerly)) -> String {
-  writerlys
-  |> writerlys_to_blamed_lines_internal(0, False)
-  |> blamedlines.blamed_lines_to_string
-}
 
 pub fn writerly_to_string(writerly: Writerly) -> String {
   writerly
@@ -1259,14 +1195,25 @@ pub fn writerly_to_string(writerly: Writerly) -> String {
   |> blamedlines.blamed_lines_to_string
 }
 
+//*********************************
+//* echo_writerly api
+//*********************************
+
+pub fn echo_writerly(writerly: Writerly, banner: String) -> Writerly {
+  writerly
+  |> writerly_annotate_blames
+  |> writerly_to_blamed_lines_internal(0, True)
+  |> blamedlines.blamed_lines_pretty_printer_no1(banner)
+  |> io.println
+  writerly
+}
+
 //*******************************
-//* converting Writerly to VXML *
+//* Writerly -> VXML
 //*******************************
 
 const writerly_blank_line_vxml_tag = "WriterlyBlankLine"
-
 const writerly_code_block_vxml_tag = "WriterlyCodeBlock"
-
 const writerly_code_block_annotation_vxml_attribute_name = "language"
 
 pub fn writerly_to_vxml(t: Writerly) -> VXML {
@@ -1300,19 +1247,22 @@ pub fn writerly_to_vxml(t: Writerly) -> VXML {
         blame: blame,
         tag: tag,
         attributes: attributes,
-        children: writerlys_to_vxmls(children),
+        children: children |> list.map(writerly_to_vxml),
       )
     }
   }
 }
 
-pub fn writerlys_to_vxmls(writerlys: List(Writerly)) -> List(VXML) {
-  list.map(writerlys, writerly_to_vxml)
+pub fn writerlys_to_vxmls(
+  writerlys: List(Writerly)
+) -> List(VXML) {
+  writerlys
+  |> list.map(writerly_to_vxml)
 }
 
-//********
-//* main *
-//********
+//***************************
+//* assemble_blamed_lines internals
+//***************************
 
 fn file_is_not_commented(path: String) -> Bool {
   !{ string.contains(path, "/#") || string.starts_with(path, "#") }
@@ -1541,74 +1491,76 @@ pub fn assemble_blamed_lines_advanced_mode(
   }
 }
 
+//***************************
+//* assemble_blamed_lines
+//***************************
+
 pub fn assemble_blamed_lines(
   dirname: String,
 ) -> Result(List(BlamedLine), AssemblyError) {
   assemble_blamed_lines_advanced_mode(dirname, [])
 }
 
-fn on_error_on_ok(
-  result r: Result(a, b),
-  on_error on_error: fn(b) -> c,
-  with_on_ok on_ok: fn(a) -> c,
-) -> c {
-  case r {
-    Error(b) -> on_error(b)
-    Ok(a) -> on_ok(a)
-  }
-}
+//***************************
+//* assemble_and_parse
+//***************************
 
-pub fn assemble_and_parse_debug(
+pub fn assemble_and_parse(
   dir_or_filename: String,
-  debug: Bool,
 ) -> Result(List(Writerly), AssemblyOrParseError) {
   use assembled <- on_error_on_ok(
-    result: assemble_blamed_lines(dir_or_filename),
-    on_error: fn(e) {Error(AssemblyError(e))},
+    assemble_blamed_lines(dir_or_filename),
+    fn(e) {Error(AssemblyError(e))},
   )
 
   use writerlys <- on_error_on_ok(
-    result: parse_blamed_lines_debug(assembled, debug),
-    on_error: fn(e) {Error(ParseError(e))},
+    parse_blamed_lines(assembled),
+    fn(e) {Error(ParseError(e))},
   )
 
   Ok(writerlys)
 }
 
-pub fn assemble_and_parse(
-  dir_or_filename: String,
-) -> Result(List(Writerly), AssemblyOrParseError) {
-  assemble_and_parse_debug(dir_or_filename, False)
-}
-
 fn contents_test() {
   let dirname = "test/contents"
 
-  case assemble_blamed_lines_advanced_mode(dirname, []) {
-    Ok(lines) -> {
-      case parse_blamed_lines_debug(lines, True) {
-        Ok(writerlys) -> {
-          debug_print_writerlys("(debug_print_writerlys)", writerlys)
-          io.println("")
-          io.println("")
-          io.println(writerlys_to_string(writerlys))
-          io.println("")
-          io.println("")
-          debug_print_vxmls("(vxmls)", writerlys |> writerlys_to_vxmls)
-          io.println("")
-        }
+  use lines <- on_error_on_ok(
+    assemble_blamed_lines(dirname),
+    fn (error) {
+      io.println("assemble_blamed_lines error:" <> ins(error))
+    }
+  )
 
-        Error(error) -> {
-          io.println("\nthere was a parsing error:")
-          io.println(ins(error))
-        }
-      }
-      Nil
+  use writerlys <- on_error_on_ok(
+    parse_blamed_lines(lines),
+    fn (error) {
+      io.println("parse_blamed_lines error:" <> ins(error))
     }
-    Error(error) -> {
-      io.println("there was an error:" <> ins(error))
+  )
+
+  let vxmls =
+    writerlys
+    |> list.map(writerly_to_vxml)
+
+  list.index_map(
+    writerlys,
+    fn (writerly, i) {
+      echo_writerly(writerly, "contents_test writerly fragment # " <> ins(i + 1))
+      io.println("")
     }
-  }
+  )
+
+  io.println("")
+
+  list.index_map(
+    vxmls,
+    fn (vxml, i) {
+      vx.echo_vxml(vxml, "contents_test vxml fragment # " <> ins(i + 1))
+      io.println("")
+    }
+  )
+
+  io.println("")
 }
 
 //***************************************************
@@ -1697,15 +1649,30 @@ fn html_test() {
     io.println("could not read file " <> path)
   })
 
-  use vxml <- on_error_on_ok(vxml.xmlm_based_html_parser(content, path), fn(e) {
+  use vxml <- on_error_on_ok(vx.xmlm_based_html_parser(content, path), fn(e) {
     io.println("xmlm_based_html_parser error: " <> ins(e))
   })
 
-  let writerlys = vxmls_to_writerlys([vxml])
+  let writerlys = vxml_to_writerlys(vxml)
 
-  debug_print_writerlys("", writerlys)
+  io.println("")
+  io.println("list.length(writerlys) == " <> ins(list.length(writerlys)))
+  io.println("")
 
-  let _ = simplifile.write("test/ch5_ch.emu", writerlys_to_string(writerlys))
+  writerlys
+  |> list.index_map(
+    fn (writerly, i) {
+      echo_writerly(writerly, "html_test " <> ins(i + 1))
+      io.println("")
+    }
+  )
+
+  let _ = simplifile.write(
+    "test/ch5_ch.emu",
+    writerlys
+    |> list.map(writerly_to_string)
+    |> string.concat
+  )
 
   Nil
 }
@@ -1713,28 +1680,42 @@ fn html_test() {
 fn sample_test() {
   let filename = "test/sample.wly"
 
-  case simplifile.read(filename) {
-    Error(e) -> io.println("Error reading " <> filename <> ": " <> ins(e))
+  use contents <- on_error_on_ok(
+    simplifile.read(filename),
+    fn(e) {io.println("there was an io error: " <> ins(e))}
+  )
 
-    Ok(file) -> {
-      case parse_string_debug(file, filename, True) {
-        Ok(writerlys) -> {
-          debug_print_writerlys("(writerlys)", writerlys)
-          io.println("")
-          io.println(writerlys_to_string(writerlys))
-          io.println("")
-          debug_print_vxmls("(vxmls)", writerlys |> writerlys_to_vxmls)
-        }
+  use writerlys <- on_error_on_ok(
+    parse_string(contents, filename),
+    fn(e) {io.println("there was a parsing error: " <> ins(e))}
+  )
 
-        Error(error) -> {
-          io.println("\nthere was a parsing error:")
-          io.println(ins(error))
-        }
-      }
+  io.println("")
+  io.println("list.length(writerlys) == " <> ins(list.length(writerlys)))
+  io.println("")
 
-      Nil
+  writerlys
+  |> list.index_map(
+    fn (writerly, i) {
+      echo_writerly(writerly, "sample_test writerly " <> ins(i + 1))
+      io.println("")
     }
-  }
+  )
+
+  let vxmls = writerlys |> list.map(writerly_to_vxml)
+
+  io.println("list.length(vxmls) == " <> ins(list.length(vxmls)))
+  io.println("")
+
+  vxmls
+  |> list.index_map(
+    fn (wxml, i) {
+      vx.echo_vxml(wxml, "sample_test vxml" <> ins(i + 1))
+      io.println("")
+    }
+  )
+
+  Nil
 }
 
 pub fn digest(w: Writerly) -> String {
@@ -1753,5 +1734,5 @@ pub fn avoid_linter_complaint_about_unused_functions() {
 }
 
 pub fn main() {
-  sample_test()
+  html_test()
 }
