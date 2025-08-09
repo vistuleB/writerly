@@ -1618,18 +1618,6 @@ fn is_t(vxml: VXML) -> Bool {
   }
 }
 
-pub fn v_attribute_with_key(
-  vxml: VXML,
-  key: String,
-) -> Option(BlamedAttribute) {
-  let assert V(_, _, attrs, _) = vxml
-  case list.find(attrs, fn(b) { b.key == key })
-  {
-    Error(Nil) -> None
-    Ok(thing) -> Some(thing)
-  }
-}
-
 pub fn vxml_to_writerlys(vxml: VXML) -> List(Writerly) { // it would 'Writerly' not 'List(Writerly)' if for the fact that someone could give an empty text node
   case vxml {
     V(blame, tag, attributes, children) -> {
