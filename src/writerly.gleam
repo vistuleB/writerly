@@ -1611,16 +1611,52 @@ fn process_vxml_t_node(vxml: VXML) -> List(Writerly) {
   }
 }
 
+fn is_t(vxml: VXML) -> Bool {
+  case vxml {
+    T(_, _) -> True
+    _ -> False
+  }
+}
+
+pub fn v_attribute_with_key(
+  vxml: VXML,
+  key: String,
+) -> Option(BlamedAttribute) {
+  let assert V(_, _, attrs, _) = vxml
+  case list.find(attrs, fn(b) { b.key == key })
+  {
+    Error(Nil) -> None
+    Ok(thing) -> Some(thing)
+  }
+}
+
 pub fn vxml_to_writerlys(vxml: VXML) -> List(Writerly) { // it would 'Writerly' not 'List(Writerly)' if for the fact that someone could give an empty text node
   case vxml {
     V(blame, tag, attributes, children) -> {
-      case tag == "WriterlyBlankLine" {
-        True -> {
+      case tag {
+        "WriterlyBlankLine" -> {
           let assert True = list.is_empty(attributes)
           let assert True = list.is_empty(children)
           [BlankLine(blame)]
         }
-        False -> {
+        "WriterlyCodeBlock" -> {
+          let assert True = list.all(children, is_t)
+          let annotation = case list.find(attributes, fn(b) { b.key == "language" }) {
+            Ok(thing) -> thing.value
+            Error(Nil) -> ""
+          }
+          let lines =
+            children
+            |> list.map(
+              fn(t) {
+                let assert T(blame, lines) = t
+                lines
+              }
+            )
+            |> list.flatten
+          [CodeBlock(blame, annotation, lines)]
+        }
+        _ -> {
           let children = children |> vxmls_to_writerlys
           [Tag(blame, tag, attributes, children)]
         }
