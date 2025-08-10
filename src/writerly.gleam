@@ -1637,7 +1637,7 @@ pub fn vxml_to_writerlys(vxml: VXML) -> List(Writerly) { // it would 'Writerly' 
             children
             |> list.map(
               fn(t) {
-                let assert T(blame, lines) = t
+                let assert T(_, lines) = t
                 lines
               }
             )
