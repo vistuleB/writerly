@@ -16,6 +16,105 @@ import vxml.{
 
 const debug = False
 
+type DirectoryOrFile {
+  DirectoryOrFile(
+    name: String,
+    contents: List(DirectoryOrFile),
+  )
+}
+
+fn directory_contents_internal(
+  previous: List(DirectoryOrFile),
+  under_construction: Option(#(String, List(String))),
+  remaining: List(String),
+) -> List(DirectoryOrFile) {
+  case remaining, under_construction {
+    [], None -> previous |> list.reverse
+    [], Some(#(name, files)) -> {
+      let constructed = DirectoryOrFile(
+        name: name,
+        contents: directory_contents_internal([], None, files |> list.reverse),
+      )
+      [constructed, ..previous] |> list.reverse
+    }
+    [first, ..rest], None -> {
+      let under_construction = case string.split_once(first, "/") |> result.unwrap(#(first, "")) {
+        #(dirname, path) if path != "" -> Some(#(dirname, [path]))
+        #(dirname, _) -> Some(#(dirname, []))
+      }
+      directory_contents_internal(previous, under_construction, rest)
+    }
+    [first, ..rest], Some(#(name, files)) -> {
+      case string.split_once(first, "/") |> result.unwrap(#(first, "")) {
+        #(dirname, path) if dirname == name -> {
+          let assert True = path != ""
+          directory_contents_internal(previous, Some(#(name, [path, ..files])), rest)
+        }
+        #(dirname, path) -> {
+          let constructed = DirectoryOrFile(
+            name: name,
+            contents: directory_contents_internal([], None, files |> list.reverse),
+          )
+          let under_construction = case path == "" {
+            True -> Some(#(dirname, []))
+            False -> Some(#(dirname, [path]))
+          }
+          directory_contents_internal([constructed, ..previous], under_construction, rest)
+        }
+      }
+    }
+  }
+}
+
+fn directory_pretty_printer_add_margin(
+  lines: List(String),
+  is_last: Bool,
+) -> List(String) {
+  let t = "├─ "
+  let b = "│  "
+  let l = "└─ "
+  let s = "   "
+  case is_last {
+    False -> list.index_map(
+      lines,
+      fn (line, i) {
+        case i == 0 {
+          True -> t <> line
+          False -> b <> line
+        }
+      }
+    )
+    True -> list.index_map(
+      lines,
+      fn (line, i) {
+        case i == 0 {
+          True -> l <> line
+          False -> s <> line
+        }
+      }
+    )
+  }
+}
+
+fn directory_pretty_printer(dir: DirectoryOrFile) -> List(String) {
+  let num_children = list.length(dir.contents)
+  let xtra_margin = case string.reverse(dir.name) |> string.split_once("/") {
+    Ok(#(_, after)) -> string.length(after) + 1
+    _ -> 0
+  }
+  let xtra_margin = string.repeat(" ", xtra_margin)
+  list.index_map(
+    dir.contents,
+    fn (child, i) {
+      directory_pretty_printer(child)
+      |> directory_pretty_printer_add_margin(i == num_children - 1)
+      |> list.map(fn(line){xtra_margin <> line})
+    }
+  )
+  |> list.flatten
+  |> list.prepend(dir.name)
+}
+
 // ****************
 // * utils
 // ****************
@@ -1447,10 +1546,18 @@ fn check_no_duplicate_files(files: List(String)) -> Result(Nil, AssemblyError) {
   }
 }
 
+fn drop_slash(s: String) {
+  case string.ends_with(s, "/") {
+    True -> string.drop_end(s, 1)
+    False -> string.drop_end(s, 0)
+  }
+}
+
 pub fn assemble_blamed_lines_advanced_mode(
   dirname: String,
   path_selectors: List(String),
-) -> Result(List(BlamedLine), AssemblyError) {
+) -> Result(#(List(String), List(BlamedLine)), AssemblyError) {
+  let dirname = drop_slash(dirname)
   case get_files(dirname) {
     Ok(#(was_dir, files)) -> {
       let selected_with_unwanted_parents =
@@ -1472,7 +1579,15 @@ pub fn assemble_blamed_lines_advanced_mode(
 
       use _ <- result.try(check_no_duplicate_files(sorted))
 
-      sorted
+      let files = list.map(sorted, string.drop_start(_, string.length(dirname) + 1))
+
+      let tree = DirectoryOrFile(
+        dirname,
+        directory_contents_internal([], None, files),
+      ) 
+      |> directory_pretty_printer
+
+      use lines <- result.try(sorted
         |> list.map(add_tree_depth(_, dirname))
         |> list.map(
           blamed_lines_for_file_at_depth(
@@ -1485,6 +1600,9 @@ pub fn assemble_blamed_lines_advanced_mode(
         )
         |> result.all
         |> result.map(list.flatten)
+      )
+
+      Ok(#(tree, lines))
     }
 
     Error(e) -> Error(FileError(e))
@@ -1497,7 +1615,7 @@ pub fn assemble_blamed_lines_advanced_mode(
 
 pub fn assemble_blamed_lines(
   dirname: String,
-) -> Result(List(BlamedLine), AssemblyError) {
+) -> Result(#(List(String), List(BlamedLine)), AssemblyError) {
   assemble_blamed_lines_advanced_mode(dirname, [])
 }
 
@@ -1508,7 +1626,7 @@ pub fn assemble_blamed_lines(
 pub fn assemble_and_parse(
   dir_or_filename: String,
 ) -> Result(List(Writerly), AssemblyOrParseError) {
-  use assembled <- on_error_on_ok(
+  use #(_, assembled) <- on_error_on_ok(
     assemble_blamed_lines(dir_or_filename),
     fn(e) {Error(AssemblyError(e))},
   )
@@ -1524,7 +1642,7 @@ pub fn assemble_and_parse(
 fn contents_test() {
   let dirname = "test/contents"
 
-  use lines <- on_error_on_ok(
+  use #(_, lines) <- on_error_on_ok(
     assemble_blamed_lines(dirname),
     fn (error) {
       io.println("assemble_blamed_lines error:" <> ins(error))
