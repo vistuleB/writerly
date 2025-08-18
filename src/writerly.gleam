@@ -1133,8 +1133,7 @@ fn echo_tentatives(
 ) -> List(TentativeWriterly) {
   tentatives
   |> tentatives_to_output_lines_internal(0)
-  |> blamedlines.output_lines_pretty_printer_no1(banner)
-  |> io.println
+  |> blamedlines.echo_output_lines(banner)
   tentatives
 }
 
@@ -1297,8 +1296,7 @@ pub fn echo_writerly(writerly: Writerly, banner: String) -> Writerly {
   writerly
   |> writerly_annotate_blames
   |> writerly_to_output_lines_internal(0, True)
-  |> blamedlines.output_lines_pretty_printer_no1(banner)
-  |> io.println
+  |> blamedlines.echo_output_lines(banner)
   writerly
 }
 
