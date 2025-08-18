@@ -922,7 +922,7 @@ fn tentative_parse_at_indent(
 }
 
 //****************************************
-//* tentative parsing api (blamed lines) *
+//* tentative parsing api (input lines) *
 //****************************************
 
 fn tentative_parse_input_lines(
@@ -954,7 +954,7 @@ fn tentative_parse_input_lines(
 }
 
 //***************************************
-//* writerly parsing api (blamed lines) *
+//* writerly parsing api (input lines) *
 //***************************************
 
 pub fn parse_input_lines(
@@ -1268,7 +1268,7 @@ fn writerly_to_output_lines_internal(
 }
 
 //*********************************
-//* Writerly -> blamed lines api
+//* Writerly -> output lines api
 //*********************************
 
 pub fn writerly_to_output_lines(
@@ -1278,15 +1278,32 @@ pub fn writerly_to_output_lines(
   |> writerly_to_output_lines_internal(0, False)
 }
 
+pub fn writerlys_to_output_lines(
+  writerlys: List(Writerly),
+) -> List(OutputLine) {
+  writerlys
+  |> list.map(writerly_to_output_lines)
+  |> list.flatten
+}
+
 //*********************************
 //* Writerly -> String api
 //*********************************
 
 pub fn writerly_to_string(writerly: Writerly) -> String {
   writerly
-  |> writerly_to_output_lines_internal(0, False)
+  |> writerly_to_output_lines()
   |> blamedlines.output_lines_to_string
 }
+
+pub fn writerlys_to_string(
+  writerlys: List(Writerly),
+) -> String {
+  writerlys
+  |> writerlys_to_output_lines()
+  |> blamedlines.output_lines_to_string
+}
+
 
 //*********************************
 //* echo_writerly api
