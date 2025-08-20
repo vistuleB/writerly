@@ -197,7 +197,7 @@ type TentativeBlamedAttribute {
 }
 
 type ClosingBackTicksError {
-  UndesiredAnnotation(Int, FileHead)
+  UndesiredAnnotation(Blame, FileHead)
   NoBackticksFound(FileHead)
 }
 
@@ -566,10 +566,7 @@ fn fast_forward_to_closing_backticks(
                     True -> Ok(#([], move_forward(head)))
 
                     False ->
-                      Error(UndesiredAnnotation(
-                        blame.line_no,
-                        move_forward(head),
-                      ))
+                      Error(UndesiredAnnotation(blame, move_forward(head)))
                   }
                 }
               }
@@ -847,8 +844,8 @@ fn tentative_parse_at_indent(
                           let error_message =
                             "closing backticks on L"
                             <> ins(error_line_number)
-                            <> " for backticks opened at L"
-                            <> ins(blame.line_no)
+                            <> " for backticks opened at "
+                            <> blamedlines.blame_digest(blame)
                             <> " carry unexpected annotation"
 
                           let tentative_error =
