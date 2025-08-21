@@ -1596,7 +1596,8 @@ pub fn assemble_input_lines_advanced_mode(
       ) 
       |> directory_pretty_printer
 
-      use lines <- result.try(sorted
+      use lines <- result.try(
+        sorted
         |> list.map(add_tree_depth(_, dirname))
         |> list.map(
           input_lines_for_file_at_depth(
