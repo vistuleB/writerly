@@ -1,4 +1,4 @@
-import blamedlines.{ type Blame, type InputLine, InputLine, type OutputLine, OutputLine, prepend_comment as pc }
+import blamedlines.{type Blame, type InputLine, InputLine, type OutputLine, OutputLine, prepend_comment as pc} as bl
 import gleam/int
 import gleam/io
 import gleam/list
@@ -9,10 +9,7 @@ import gleam/result
 import gleam/regexp
 import gleam/string.{inspect as ins}
 import simplifile
-import vxml.{
-  type BlamedAttribute, type BlamedContent, type VXML, BlamedAttribute,
-  BlamedContent, T, V
-} as vx
+import vxml.{type BlamedAttribute, type BlamedContent, type VXML, BlamedAttribute, BlamedContent, T, V} as vx
 import dirtree as dt
 
 const debug = False
@@ -747,7 +744,7 @@ fn tentative_parse_at_indent(
                             "closing backticks on L"
                             <> ins(error_line_number)
                             <> " for backticks opened at "
-                            <> blamedlines.blame_digest(blame)
+                            <> bl.blame_digest(blame)
                             <> " carry unexpected annotation"
 
                           let tentative_error =
@@ -827,7 +824,7 @@ fn tentative_parse_at_indent(
 fn tentative_parse_input_lines(
   head: FileHead,
 ) -> List(TentativeWriterly) {
-  let head = list.filter(head, fn(line) { !string.starts_with(line.content, "!!") })
+  let head = list.filter(head, fn(line) { !string.starts_with(line.suffix, "!!") })
   let #(parsed, _, final_head) = tentative_parse_at_indent(0, head)
 
   let parsed =
@@ -873,7 +870,7 @@ fn parse_string(
   filename: String,
 ) -> Result(List(Writerly), ParseError) {
   source
-  |> blamedlines.string_to_input_lines(filename, 0)
+  |> bl.string_to_input_lines(filename, 0)
   |> parse_input_lines
 }
 
@@ -979,7 +976,7 @@ fn tentative_to_output_lines_internal(
         Error(IllegalCharacter(bad_tag, bad_char)) ->
           OutputLine(
             blame
-              |> blamedlines.prepend_comment(
+              |> bl.prepend_comment(
                 "ERROR illegal tag character: " <> bad_char,
               ),
             indentation,
@@ -987,7 +984,7 @@ fn tentative_to_output_lines_internal(
           )
         Error(Empty) ->
           OutputLine(
-            blame |> blamedlines.prepend_comment("ERROR empty tag"),
+            blame |> bl.prepend_comment("ERROR empty tag"),
             indentation,
             "<>",
           )
@@ -1008,7 +1005,7 @@ fn tentative_to_output_lines_internal(
       [
         OutputLine(
           blame
-            |> blamedlines.prepend_comment("ERROR " <> error_type),
+            |> bl.prepend_comment("ERROR " <> error_type),
           indentation,
           message,
         ),
@@ -1032,7 +1029,7 @@ fn echo_tentatives(
 ) -> List(TentativeWriterly) {
   tentatives
   |> tentatives_to_output_lines_internal(0)
-  |> blamedlines.echo_output_lines(banner)
+  |> bl.echo_output_lines(banner)
   tentatives
 }
 
@@ -1154,8 +1151,8 @@ fn writerly_to_output_lines_internal(
       let buffer_lines = case first_child_is_blurb_and_first_line_of_blurb_could_be_read_as_attribute_value_pair(children) {
         True -> {
           let blame = case annotate_blames {
-            False -> blame |> blamedlines.clear_comments
-            True -> blame |> blamedlines.clear_comments |> pc("(a-b separation line)")
+            False -> blame |> bl.clear_comments
+            True -> blame |> bl.clear_comments |> pc("(a-b separation line)")
           }
           [OutputLine(blame, 0, "")]
         }
@@ -1192,7 +1189,7 @@ pub fn writerlys_to_output_lines(
 pub fn writerly_to_string(writerly: Writerly) -> String {
   writerly
   |> writerly_to_output_lines()
-  |> blamedlines.output_lines_to_string
+  |> bl.output_lines_to_string
 }
 
 pub fn writerlys_to_string(
@@ -1200,7 +1197,7 @@ pub fn writerlys_to_string(
 ) -> String {
   writerlys
   |> writerlys_to_output_lines()
-  |> blamedlines.output_lines_to_string
+  |> bl.output_lines_to_string
 }
 
 
@@ -1212,7 +1209,7 @@ pub fn echo_writerly(writerly: Writerly, banner: String) -> Writerly {
   writerly
   |> writerly_annotate_blames
   |> writerly_to_output_lines_internal(0, True)
-  |> blamedlines.echo_output_lines(banner)
+  |> bl.echo_output_lines(banner)
   writerly
 }
 
@@ -1375,7 +1372,7 @@ fn input_lines_for_file_at_depth(
 
   case simplifile.read(path) {
     Ok(string) -> {
-      Ok(blamedlines.string_to_input_lines(string, shortname, 4 * depth))
+      Ok(bl.string_to_input_lines(string, shortname, 4 * depth))
     }
     Error(error) -> {
       io.println("error reading " <> path)
