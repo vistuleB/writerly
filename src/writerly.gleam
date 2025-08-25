@@ -13,107 +13,9 @@ import vxml.{
   type BlamedAttribute, type BlamedContent, type VXML, BlamedAttribute,
   BlamedContent, T, V
 } as vx
+import dirtree as dt
 
 const debug = False
-
-type DirectoryOrFile {
-  DirectoryOrFile(
-    name: String,
-    contents: List(DirectoryOrFile),
-  )
-}
-
-fn directory_contents_internal(
-  previous: List(DirectoryOrFile),
-  under_construction: Option(#(String, List(String))),
-  remaining: List(String),
-) -> List(DirectoryOrFile) {
-  case remaining, under_construction {
-    [], None -> previous |> list.reverse
-    [], Some(#(name, files)) -> {
-      let constructed = DirectoryOrFile(
-        name: name,
-        contents: directory_contents_internal([], None, files |> list.reverse),
-      )
-      [constructed, ..previous] |> list.reverse
-    }
-    [first, ..rest], None -> {
-      let under_construction = case string.split_once(first, "/") |> result.unwrap(#(first, "")) {
-        #(dirname, path) if path != "" -> Some(#(dirname, [path]))
-        #(dirname, _) -> Some(#(dirname, []))
-      }
-      directory_contents_internal(previous, under_construction, rest)
-    }
-    [first, ..rest], Some(#(name, files)) -> {
-      case string.split_once(first, "/") |> result.unwrap(#(first, "")) {
-        #(dirname, path) if dirname == name -> {
-          let assert True = path != ""
-          directory_contents_internal(previous, Some(#(name, [path, ..files])), rest)
-        }
-        #(dirname, path) -> {
-          let constructed = DirectoryOrFile(
-            name: name,
-            contents: directory_contents_internal([], None, files |> list.reverse),
-          )
-          let under_construction = case path == "" {
-            True -> Some(#(dirname, []))
-            False -> Some(#(dirname, [path]))
-          }
-          directory_contents_internal([constructed, ..previous], under_construction, rest)
-        }
-      }
-    }
-  }
-}
-
-fn directory_pretty_printer_add_margin(
-  lines: List(String),
-  is_last: Bool,
-) -> List(String) {
-  let t = "├─ "
-  let b = "│  "
-  let l = "└─ "
-  let s = "   "
-  case is_last {
-    False -> list.index_map(
-      lines,
-      fn (line, i) {
-        case i == 0 {
-          True -> t <> line
-          False -> b <> line
-        }
-      }
-    )
-    True -> list.index_map(
-      lines,
-      fn (line, i) {
-        case i == 0 {
-          True -> l <> line
-          False -> s <> line
-        }
-      }
-    )
-  }
-}
-
-fn directory_pretty_printer(dir: DirectoryOrFile) -> List(String) {
-  let num_children = list.length(dir.contents)
-  let xtra_margin = case string.reverse(dir.name) |> string.split_once("/") {
-    Ok(#(_, after)) -> string.length(after) + 1
-    _ -> 0
-  }
-  let xtra_margin = string.repeat(" ", xtra_margin)
-  list.index_map(
-    dir.contents,
-    fn (child, i) {
-      directory_pretty_printer(child)
-      |> directory_pretty_printer_add_margin(i == num_children - 1)
-      |> list.map(fn(line){xtra_margin <> line})
-    }
-  )
-  |> list.flatten
-  |> list.prepend(dir.name)
-}
 
 // ****************
 // * utils
@@ -1588,13 +1490,11 @@ pub fn assemble_input_lines_advanced_mode(
 
       use _ <- result.try(check_no_duplicate_files(sorted))
 
-      let files = list.map(sorted, string.drop_start(_, string.length(dirname) + 1))
-
-      let tree = DirectoryOrFile(
-        dirname,
-        directory_contents_internal([], None, files),
-      ) 
-      |> directory_pretty_printer
+      let tree = 
+        sorted
+        |> list.map(string.drop_start(_, string.length(dirname) + 1))
+        |> dt.directory_tree_from_dir_and_paths(dirname, _, False)
+        |> dt.pretty_printer
 
       use lines <- result.try(
         sorted
