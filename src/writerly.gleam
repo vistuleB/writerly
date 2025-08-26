@@ -1,4 +1,5 @@
-import blamedlines.{type Blame, type InputLine, InputLine, type OutputLine, OutputLine, prepend_comment as pc} as bl
+import blame.{type Blame, prepend_comment as pc} as bl
+import io_lines.{type InputLine, InputLine, type OutputLine, OutputLine} as io_l
 import gleam/int
 import gleam/io
 import gleam/list
@@ -870,7 +871,7 @@ fn parse_string(
   filename: String,
 ) -> Result(List(Writerly), ParseError) {
   source
-  |> bl.string_to_input_lines(filename, 0)
+  |> io_l.string_to_input_lines(filename, 0)
   |> parse_input_lines
 }
 
@@ -1029,7 +1030,7 @@ fn echo_tentatives(
 ) -> List(TentativeWriterly) {
   tentatives
   |> tentatives_to_output_lines_internal(0)
-  |> bl.echo_output_lines(banner)
+  |> io_l.echo_output_lines(banner)
   tentatives
 }
 
@@ -1189,7 +1190,7 @@ pub fn writerlys_to_output_lines(
 pub fn writerly_to_string(writerly: Writerly) -> String {
   writerly
   |> writerly_to_output_lines()
-  |> bl.output_lines_to_string
+  |> io_l.output_lines_to_string
 }
 
 pub fn writerlys_to_string(
@@ -1197,7 +1198,7 @@ pub fn writerlys_to_string(
 ) -> String {
   writerlys
   |> writerlys_to_output_lines()
-  |> bl.output_lines_to_string
+  |> io_l.output_lines_to_string
 }
 
 
@@ -1209,7 +1210,7 @@ pub fn echo_writerly(writerly: Writerly, banner: String) -> Writerly {
   writerly
   |> writerly_annotate_blames
   |> writerly_to_output_lines_internal(0, True)
-  |> bl.echo_output_lines(banner)
+  |> io_l.echo_output_lines(banner)
   writerly
 }
 
@@ -1305,9 +1306,7 @@ fn file_is_not_parent_or_has_selected_descendant_or_is_selected(
 }
 
 fn parent_path_without_extension(path: String) -> String {
-  let pieces = {
-    string.split(path, "/") |> list.reverse
-  }
+  let pieces = string.split(path, "/") |> list.reverse
   case pieces {
     [] -> "wut?"
     [_, ..rest] -> string.join(list.reverse(rest), "/") <> "/__parent."
@@ -1372,7 +1371,7 @@ fn input_lines_for_file_at_depth(
 
   case simplifile.read(path) {
     Ok(string) -> {
-      Ok(bl.string_to_input_lines(string, shortname, 4 * depth))
+      Ok(io_l.string_to_input_lines(string, shortname, 4 * depth))
     }
     Error(error) -> {
       io.println("error reading " <> path)

@@ -2,7 +2,6 @@ name = "writerly"
 version = "1.0.0"
 
 [dependencies]
-blamedlines = { "path" = "../blamedlines" }
 vxml = { "path" = "../vxml" }
 
 gleam_stdlib = ">= 0.34.0 and < 2.0.0"
