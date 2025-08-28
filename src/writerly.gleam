@@ -1782,5 +1782,5 @@ pub fn avoid_linter_complaint_about_unused_functions() {
 }
 
 pub fn main() {
-  html_test()
+  contents_test()
 }
