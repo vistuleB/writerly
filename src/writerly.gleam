@@ -47,13 +47,13 @@ pub type Writerly {
 }
 
 pub type ParseError {
-  TagEmpty(Blame)
-  TagIllegalCharacter(Blame, String, String)
-  AttributeKeyIllegalCharacter(Blame, String, String)
-  IndentationTooLarge(Blame, String)
-  IndentationNotMultipleOfFour(Blame, String)
-  CodeBlockNotClosed(Blame)
-  CodeBlockUnwantedAnnotationAtClose(Blame)
+  TagEmpty(blame: Blame)
+  TagIllegalCharacter(blame: Blame, bad_name: String, bad_char: String)
+  AttributeKeyIllegalCharacter(blame: Blame, bad_key: String, bad_char: String)
+  IndentationTooLarge(blame: Blame, line: String)
+  IndentationNotMultipleOfFour(blame: Blame, line: String)
+  CodeBlockNotClosed(blame: Blame)
+  CodeBlockUnwantedAnnotationAtClose(blame: Blame, opening_blame: Blame)
 }
 
 pub type AssemblyError {
@@ -124,7 +124,7 @@ type TentativeWriterly {
   )
   TentativeErrorIndentationTooLarge(blame: Blame, message: String)
   TentativeErrorIndentationNotMultipleOfFour(blame: Blame, message: String)
-  TentativeErrorCodeBlockUnwantedAnnotationAtClose(blame: Blame, message: String)
+  TentativeErrorCodeBlockUnwantedAnnotationAtClose(blame: Blame, opening_blame: Blame, message: String)
   TentativeErrorCodeBlockNotClosed(blame: Blame)
 }
 
@@ -204,8 +204,8 @@ fn parse_from_tentative(
   tentative: TentativeWriterly,
 ) -> Result(Writerly, ParseError) {
   case tentative {
-    TentativeErrorCodeBlockUnwantedAnnotationAtClose(blame, _) ->
-      Error(CodeBlockUnwantedAnnotationAtClose(blame))
+    TentativeErrorCodeBlockUnwantedAnnotationAtClose(blame, opening_blame, _) ->
+      Error(CodeBlockUnwantedAnnotationAtClose(blame, opening_blame))
 
     TentativeErrorIndentationTooLarge(blame, message) ->
       Error(IndentationTooLarge(blame, message))
@@ -739,18 +739,19 @@ fn tentative_parse_at_indent(
                         }
 
                         Error(UndesiredAnnotation(
-                          error_line_number,
+                          closing_blame,
                           head_after_error,
                         )) -> {
                           let error_message =
-                            "closing backticks on L"
-                            <> ins(error_line_number)
+                            "closing backticks at"
+                            <> bl.blame_digest(closing_blame)
                             <> " for backticks opened at "
                             <> bl.blame_digest(blame)
                             <> " carry unexpected annotation"
 
                           let tentative_error =
                             TentativeErrorCodeBlockUnwantedAnnotationAtClose(
+                              closing_blame,
                               blame,
                               error_message,
                             )
@@ -903,7 +904,7 @@ fn tentative_error_blame_and_type_and_message(
       "CodeBlockNotClosed",
       "",
     )
-    TentativeErrorCodeBlockUnwantedAnnotationAtClose(blame, message) -> #(
+    TentativeErrorCodeBlockUnwantedAnnotationAtClose(blame, _opening_blame, message) -> #(
       blame,
       "CodeBlockUnwantedAnnotationAtClose",
       message,
