@@ -57,7 +57,8 @@ pub type ParseError {
 }
 
 pub type AssemblyError {
-  FileError(simplifile.FileError)
+  ReadFileError(String)
+  ReadFileOrDirectoryError(String)
   TwoFilesSameName(String) // because we accept both .emu and .wly extensions, but we want to avoid mixing error
 }
 
@@ -1373,9 +1374,8 @@ fn input_lines_for_file_at_depth(
     Ok(string) -> {
       Ok(io_l.string_to_input_lines(string, shortname, 4 * depth))
     }
-    Error(error) -> {
-      io.println("error reading " <> path)
-      Error(FileError(error))
+    Error(_) -> {
+      Error(ReadFileError(path))
     }
   }
 }
@@ -1387,10 +1387,7 @@ fn get_files(
     Ok(files) ->
       Ok(#(
         True,
-        files
-          |> list.filter(keeping: fn(file) {
-            !string.contains(file, ".DS_Store")
-          }),
+        files |> list.filter(fn(file) {string.ends_with(file, ".wly") || string.ends_with(file, ".emu")}),
       ))
     Error(simplifile.Enotdir) -> Ok(#(False, [dirname]))
     Error(error) -> Error(error)
@@ -1511,7 +1508,7 @@ pub fn assemble_input_lines_advanced_mode(
       Ok(#(tree, lines))
     }
 
-    Error(e) -> Error(FileError(e))
+    Error(_) -> Error(ReadFileOrDirectoryError(dirname))
   }
 }
 

@@ -62,6 +62,7 @@ pub fn directory_tree_from_dir_and_paths(
     False -> local_paths
     True -> list.sort(local_paths, string.compare)
   }
+  |> list.filter(fn(s){!string.is_empty(s)})
   DirectoryOrFile(
     dirname,
     directory_contents_internal([], None, local_paths),
