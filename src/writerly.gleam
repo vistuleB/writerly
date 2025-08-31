@@ -10,7 +10,7 @@ import gleam/result
 import gleam/regexp
 import gleam/string.{inspect as ins}
 import simplifile
-import vxml.{type BlamedAttribute, type BlamedContent, type VXML, BlamedAttribute, BlamedContent, T, V} as vx
+import vxml.{type Attribute, type Line, type VXML, Attribute, Line, T, V} as vx
 import dirtree as dt
 
 const debug = False
@@ -36,12 +36,12 @@ fn on_error_on_ok(
 
 pub type Writerly {
   BlankLine(blame: Blame)
-  Blurb(blame: Blame, lines: List(BlamedContent))
-  CodeBlock(blame: Blame, annotation: String, lines: List(BlamedContent))
+  Blurb(blame: Blame, lines: List(Line))
+  CodeBlock(blame: Blame, annotation: String, lines: List(Line))
   Tag(
     blame: Blame,
     name: String,
-    attributes: List(BlamedAttribute),
+    attributes: List(Attribute),
     children: List(Writerly),
   )
 }
@@ -89,8 +89,8 @@ type BadAttributeKey {
 type TentativeAttributeKey =
   Result(String, BadAttributeKey)
 
-type TentativeBlamedAttribute {
-  TentativeBlamedAttribute(
+type TentativeAttribute {
+  TentativeAttribute(
     blame: Blame,
     key: TentativeAttributeKey,
     value: String,
@@ -110,16 +110,16 @@ type NonemptySuffixDiagnostic {
 
 type TentativeWriterly {
   TentativeBlankLine(blame: Blame)
-  TentativeBlurb(blame: Blame, contents: List(BlamedContent))
+  TentativeBlurb(blame: Blame, contents: List(Line))
   TentativeCodeBlock(
     blame: Blame,
     annotation: String,
-    contents: List(BlamedContent),
+    contents: List(Line),
   )
   TentativeTag(
     blame: Blame,
     tag: TentativeTagName,
-    attributes: List(TentativeBlamedAttribute),
+    attributes: List(TentativeAttribute),
     children: List(TentativeWriterly),
   )
   TentativeErrorIndentationTooLarge(blame: Blame, message: String)
@@ -148,11 +148,11 @@ fn move_forward(head: FileHead) -> FileHead {
 // * parse_from_tentative *
 // ************************
 
-fn tentative_blamed_attribute_to_blamed_attribute(
-  t: TentativeBlamedAttribute,
-) -> Result(BlamedAttribute, ParseError) {
+fn tentative_attribute_to_attribute(
+  t: TentativeAttribute,
+) -> Result(Attribute, ParseError) {
   case t.key {
-    Ok(key) -> Ok(BlamedAttribute(blame: t.blame, key: key, value: t.value))
+    Ok(key) -> Ok(Attribute(blame: t.blame, key: key, value: t.value))
     Error(IllegalAttributeKeyCharacter(original_would_be_key, bad_char)) ->
       Error(AttributeKeyIllegalCharacter(
         t.blame,
@@ -162,18 +162,18 @@ fn tentative_blamed_attribute_to_blamed_attribute(
   }
 }
 
-fn tentative_blamed_attributes_to_blamed_attributes(
-  attrs: List(TentativeBlamedAttribute),
-) -> Result(List(BlamedAttribute), ParseError) {
+fn tentative_attributes_to_attributes(
+  attrs: List(TentativeAttribute),
+) -> Result(List(Attribute), ParseError) {
   case attrs {
     [] -> Ok([])
     [first, ..rest] ->
-      case tentative_blamed_attribute_to_blamed_attribute(first) {
+      case tentative_attribute_to_attribute(first) {
         Error(error) -> Error(error)
-        Ok(blamed_attribute) ->
-          case tentative_blamed_attributes_to_blamed_attributes(rest) {
-            Ok(blamed_attributes) ->
-              Ok(list.prepend(blamed_attributes, blamed_attribute))
+        Ok(attribute) ->
+          case tentative_attributes_to_attributes(rest) {
+            Ok(attributes) ->
+              Ok(list.prepend(attributes, attribute))
 
             Error(error) -> Error(error)
           }
@@ -240,7 +240,7 @@ fn parse_from_tentative(
 
         Ok(name) ->
           case
-            tentative_blamed_attributes_to_blamed_attributes(
+            tentative_attributes_to_attributes(
               tentative_attributes,
             )
           {
@@ -290,20 +290,20 @@ fn fast_forward_past_lines_of_indent_at_least(
   }
 }
 
-fn tentative_blamed_attribute(
+fn tentative_attribute(
   blame: Blame,
   pair: #(String, String),
-) -> TentativeBlamedAttribute {
+) -> TentativeAttribute {
   let #(key, value) = pair
   let assert False = string.contains(key, "=")
   let assert False = string.is_empty(key)
   let bad_character = contains_one_of(key, [".", "~"])
 
   case bad_character == "" {
-    True -> TentativeBlamedAttribute(blame: blame, key: Ok(key), value: value)
+    True -> TentativeAttribute(blame: blame, key: Ok(key), value: value)
 
     False ->
-      TentativeBlamedAttribute(
+      TentativeAttribute(
         blame: blame,
         key: Error(IllegalAttributeKeyCharacter(key, bad_character)),
         value: value,
@@ -314,7 +314,7 @@ fn tentative_blamed_attribute(
 fn fast_forward_past_attribute_lines_at_indent(
   indent: Int,
   head: FileHead,
-) -> #(List(TentativeBlamedAttribute), FileHead) {
+) -> #(List(TentativeAttribute), FileHead) {
   case current_line(head) {
     None -> #([], head)
 
@@ -339,7 +339,7 @@ fn fast_forward_past_attribute_lines_at_indent(
                 False -> {
                   let attribute_pair =
                     #(key, string.trim(value))
-                    |> tentative_blamed_attribute(blame, _)
+                    |> tentative_attribute(blame, _)
 
                   let #(more_attribute_pairs, head_after_attributes) =
                     fast_forward_past_attribute_lines_at_indent(
@@ -364,7 +364,7 @@ fn fast_forward_past_attribute_lines_at_indent(
 fn fast_forward_past_other_lines_at_indent(
   indent: Int,
   head: FileHead,
-) -> #(List(BlamedContent), FileHead) {
+) -> #(List(Line), FileHead) {
   case current_line(head) {
     None -> #([], head)
 
@@ -380,16 +380,16 @@ fn fast_forward_past_other_lines_at_indent(
             True -> #([], head)
 
             False -> {
-              let blamed_content = BlamedContent(blame, suffix)
+              let line = Line(blame, suffix)
 
-              let #(more_blamed_contents, head_after_others) =
+              let #(more_lines, head_after_others) =
                 fast_forward_past_other_lines_at_indent(
                   indent,
                   move_forward(head),
                 )
 
               #(
-                list.prepend(more_blamed_contents, blamed_content),
+                list.prepend(more_lines, line),
                 head_after_others,
               )
             }
@@ -403,7 +403,7 @@ fn fast_forward_past_other_lines_at_indent(
 fn fast_forward_to_closing_backticks(
   indent: Int,
   head: FileHead,
-) -> Result(#(List(BlamedContent), FileHead), ClosingBackTicksError) {
+) -> Result(#(List(Line), FileHead), ClosingBackTicksError) {
   case current_line(head) {
     None -> Error(NoBackticksFound(head))
 
@@ -411,15 +411,15 @@ fn fast_forward_to_closing_backticks(
       case suffix == "" {
         True ->
           case fast_forward_to_closing_backticks(indent, move_forward(head)) {
-            Ok(#(blamed_contents, head_after_closing_backticks)) -> {
-              let blamed_content =
-                BlamedContent(
+            Ok(#(lines, head_after_closing_backticks)) -> {
+              let line =
+                Line(
                   blame,
                   string.repeat(" ", int.max(0, suffix_indent - indent)),
                 )
 
               Ok(#(
-                list.prepend(blamed_contents, blamed_content),
+                list.prepend(lines, line),
                 head_after_closing_backticks,
               ))
             }
@@ -437,7 +437,7 @@ fn fast_forward_to_closing_backticks(
               let assert True = padded_suffix_length >= string.length(suffix)
               let padded_suffix =
                 string.pad_start(suffix, to: padded_suffix_length, with: " ")
-              let blamed_content = BlamedContent(blame, padded_suffix)
+              let line = Line(blame, padded_suffix)
 
               case
                 suffix_indent > indent || !string.starts_with(suffix, "```")
@@ -449,9 +449,9 @@ fn fast_forward_to_closing_backticks(
                       move_forward(head),
                     )
                   {
-                    Ok(#(blamed_contents, head_after_closing_backticks)) ->
+                    Ok(#(lines, head_after_closing_backticks)) ->
                       Ok(#(
-                        list.prepend(blamed_contents, blamed_content),
+                        list.prepend(lines, line),
                         head_after_closing_backticks,
                       ))
 
@@ -515,14 +515,14 @@ fn tentative_first_non_blank_line_is_blurb(
   }
 }
 
-fn remove_starting_escapes(contents: List(BlamedContent)) -> List(BlamedContent) {
+fn remove_starting_escapes(contents: List(Line)) -> List(Line) {
   let assert Ok(re) = regexp.from_string("^\\\\+\\s")
-  list.map(contents, fn(blamed_content) {
-    let new_content = case regexp.check(re, blamed_content.content) {
-      False -> blamed_content.content
-      True -> blamed_content.content |> string.drop_start(1)
+  list.map(contents, fn(line) {
+    let new_content = case regexp.check(re, line.content) {
+      False -> line.content
+      True -> line.content |> string.drop_start(1)
     }
-    BlamedContent(blamed_content.blame, new_content)
+    Line(line.blame, new_content)
   })
 }
 
@@ -780,9 +780,9 @@ fn tentative_parse_at_indent(
 
                     Other(_) -> {
                       let blame = blame
-                      let blamed_content = BlamedContent(blame, suffix)
+                      let line = Line(blame, suffix)
 
-                      let #(more_blamed_contents, head_after_others) =
+                      let #(more_lines, head_after_others) =
                         fast_forward_past_other_lines_at_indent(
                           indent,
                           move_forward(head),
@@ -792,8 +792,8 @@ fn tentative_parse_at_indent(
                         TentativeBlurb(
                           blame: blame,
                           contents: list.prepend(
-                            more_blamed_contents,
-                            blamed_content,
+                            more_lines,
+                            line,
                           ) |> remove_starting_escapes,
                         )
 
@@ -912,48 +912,48 @@ fn tentative_error_blame_and_type_and_message(
   }
 }
 
-fn blamed_content_to_output_line(
-  blamed_content: BlamedContent,
+fn line_to_output_line(
+  line: Line,
   indentation: Int,
 ) -> OutputLine {
-  OutputLine(blamed_content.blame, indentation, blamed_content.content)
+  OutputLine(line.blame, indentation, line.content)
 }
 
-fn blamed_contents_to_output_lines(
-  blamed_contents: List(BlamedContent),
+fn lines_to_output_lines(
+  lines: List(Line),
   indentation: Int,
 ) -> List(OutputLine) {
-  blamed_contents
-  |> list.map(blamed_content_to_output_line(_, indentation))
+  lines
+  |> list.map(line_to_output_line(_, indentation))
 }
 
-fn tentative_blamed_attribute_to_output_line(
-  blamed_attribute: TentativeBlamedAttribute,
+fn tentative_attribute_to_output_line(
+  attribute: TentativeAttribute,
   indentation: Int,
 ) -> OutputLine {
-  case blamed_attribute.key {
+  case attribute.key {
     Ok(_) ->
       OutputLine(
-        blamed_attribute.blame,
+        attribute.blame,
         indentation,
-        ins(blamed_attribute.key) <> "=" <> blamed_attribute.value,
+        ins(attribute.key) <> "=" <> attribute.value,
       )
     Error(IllegalAttributeKeyCharacter(bad_key, bad_char)) ->
       OutputLine(
-        blamed_attribute.blame
+        attribute.blame
           |> pc("ERROR illegal character in key: " <> bad_char),
         indentation,
-        bad_key <> " " <> blamed_attribute.value,
+        bad_key <> " " <> attribute.value,
       )
   }
 }
 
-fn tentative_blamed_attributes_to_output_lines(
-  blamed_attributes: List(TentativeBlamedAttribute),
+fn tentative_attributes_to_output_lines(
+  attributes: List(TentativeAttribute),
   indentation: Int,
 ) -> List(OutputLine) {
-  blamed_attributes
-  |> list.map(tentative_blamed_attribute_to_output_line(_, indentation))
+  attributes
+  |> list.map(tentative_attribute_to_output_line(_, indentation))
 }
 
 fn tentative_to_output_lines_internal(
@@ -964,12 +964,12 @@ fn tentative_to_output_lines_internal(
     TentativeBlankLine(blame) -> {
       [OutputLine(blame, 0, "")]
     }
-    TentativeBlurb(_, blamed_contents) ->
-      blamed_contents_to_output_lines(blamed_contents, indentation)
-    TentativeCodeBlock(blame, annotation, blamed_contents) -> {
+    TentativeBlurb(_, lines) ->
+      lines_to_output_lines(lines, indentation)
+    TentativeCodeBlock(blame, annotation, lines) -> {
       list.flatten([
         [OutputLine(blame, indentation, "```" <> annotation)],
-        blamed_contents_to_output_lines(blamed_contents, indentation),
+        lines_to_output_lines(lines, indentation),
         [OutputLine(blame, indentation, "```")],
       ])
     }
@@ -993,7 +993,7 @@ fn tentative_to_output_lines_internal(
           )
       }
       let attribute_lines =
-        tentative_blamed_attributes_to_output_lines(attributes, indentation + 4)
+        tentative_attributes_to_output_lines(attributes, indentation + 4)
       let children_lines =
         tentatives_to_output_lines_internal(children, indentation + 4)
       let blank_lines = case list.is_empty(children_lines) {
@@ -1043,26 +1043,26 @@ fn echo_tentatives(
 pub fn writerly_annotate_blames(writerly: Writerly) -> Writerly {
   case writerly {
     BlankLine(blame) -> BlankLine(blame |> pc("BlankLine"))
-    Blurb(blame, blamed_contents) ->
+    Blurb(blame, lines) ->
       Blurb(
         blame |> pc("Blurb"),
-        list.index_map(blamed_contents, fn(blamed_content, i) {
-          BlamedContent(
-            blamed_content.blame
-              |> pc("Blurb > BlamedContent(" <> ins(i + 1) <> ")"),
-            blamed_content.content,
+        list.index_map(lines, fn(line, i) {
+          Line(
+            line.blame
+              |> pc("Blurb > Line(" <> ins(i + 1) <> ")"),
+            line.content,
           )
         }),
       )
-    CodeBlock(blame, annotation, blamed_contents) ->
+    CodeBlock(blame, annotation, lines) ->
       CodeBlock(
         blame |> pc("CodeBlock:" <> annotation),
         annotation,
-        list.index_map(blamed_contents, fn(blamed_content, i) {
-          BlamedContent(
-            blamed_content.blame
-              |> pc("CodeBlock > BlamedContent(" <> ins(i + 1) <> ")"),
-            blamed_content.content,
+        list.index_map(lines, fn(line, i) {
+          Line(
+            line.blame
+              |> pc("CodeBlock > Line(" <> ins(i + 1) <> ")"),
+            line.content,
           )
         }),
       )
@@ -1070,12 +1070,12 @@ pub fn writerly_annotate_blames(writerly: Writerly) -> Writerly {
       Tag(
         blame |> pc("Tag"),
         tag,
-        list.index_map(attributes, fn(blamed_attribute, i) {
-          BlamedAttribute(
-            blamed_attribute.blame
-              |> pc("Tag > BlamedAttribute(" <> ins(i + 1) <> ")"),
-            blamed_attribute.key,
-            blamed_attribute.value,
+        list.index_map(attributes, fn(attribute, i) {
+          Attribute(
+            attribute.blame
+              |> pc("Tag > Attribute(" <> ins(i + 1) <> ")"),
+            attribute.key,
+            attribute.value,
           )
         }),
         children
@@ -1084,22 +1084,22 @@ pub fn writerly_annotate_blames(writerly: Writerly) -> Writerly {
   }
 }
 
-fn blamed_attribute_to_output_line(
-  blamed_attribute: BlamedAttribute,
+fn attribute_to_output_line(
+  attribute: Attribute,
   indentation: Int,
 ) -> OutputLine {
   OutputLine(
-    blamed_attribute.blame,
+    attribute.blame,
     indentation,
-    blamed_attribute.key <> "=" <> blamed_attribute.value,
+    attribute.key <> "=" <> attribute.value,
   )
 }
 
-fn blamed_attributes_to_output_lines(
-  blamed_attributes: List(BlamedAttribute),
+fn attributes_to_output_lines(
+  attributes: List(Attribute),
   indentation: Int,
 ) -> List(OutputLine) {
-  blamed_attributes |> list.map(blamed_attribute_to_output_line(_, indentation))
+  attributes |> list.map(attribute_to_output_line(_, indentation))
 }
 
 fn first_child_is_blurb_and_first_line_of_blurb_could_be_read_as_attribute_value_pair(nodes: List(Writerly)) -> Bool {
@@ -1125,12 +1125,12 @@ fn writerly_to_output_lines_internal(
 ) -> List(OutputLine) {
   case t {
     BlankLine(blame) -> [OutputLine(blame, 0, "")]
-    Blurb(_, blamed_contents) ->
-      blamed_contents_to_output_lines(blamed_contents, indentation)
-    CodeBlock(blame, annotation, blamed_contents) -> {
+    Blurb(_, lines) ->
+      lines_to_output_lines(lines, indentation)
+    CodeBlock(blame, annotation, lines) -> {
       list.flatten([
         [OutputLine(blame, indentation, "```" <> annotation)],
-        blamed_contents_to_output_lines(blamed_contents, indentation),
+        lines_to_output_lines(lines, indentation),
         [
           OutputLine(
             case annotate_blames {
@@ -1146,7 +1146,7 @@ fn writerly_to_output_lines_internal(
     Tag(blame, tag, attributes, children) -> {
       let tag_line = OutputLine(blame, indentation, "|> " <> tag)
       let attribute_lines =
-        blamed_attributes_to_output_lines(attributes, indentation + 4)
+        attributes_to_output_lines(attributes, indentation + 4)
       let children_lines =
         children
         |> list.map(writerly_to_output_lines_internal(_, indentation + 4, annotate_blames))
@@ -1234,20 +1234,20 @@ pub fn writerly_to_vxml(t: Writerly) -> VXML {
         children: [],
       )
 
-    Blurb(blame, blamed_contents) -> T(blame: blame, contents: blamed_contents)
+    Blurb(blame, lines) -> T(blame: blame, contents: lines)
 
-    CodeBlock(blame, annotation, blamed_contents) ->
+    CodeBlock(blame, annotation, lines) ->
       V(
         blame: blame,
         tag: writerly_code_block_vxml_tag,
         attributes: [
-          BlamedAttribute(
+          Attribute(
             blame,
             writerly_code_block_annotation_vxml_attribute_name,
             annotation,
           ),
         ],
-        children: [T(blame: blame, contents: blamed_contents)],
+        children: [T(blame: blame, contents: lines)],
       )
 
     Tag(blame, tag, attributes, children) -> {
@@ -1543,48 +1543,6 @@ pub fn assemble_and_parse(
   Ok(writerlys)
 }
 
-fn contents_test() {
-  let dirname = "test/contents"
-
-  use #(_, lines) <- on_error_on_ok(
-    assemble_input_lines(dirname),
-    fn (error) {
-      io.println("assemble_input_lines error:" <> ins(error))
-    }
-  )
-
-  use writerlys <- on_error_on_ok(
-    parse_input_lines(lines),
-    fn (error) {
-      io.println("parse_input_lines error:" <> ins(error))
-    }
-  )
-
-  let vxmls =
-    writerlys
-    |> list.map(writerly_to_vxml)
-
-  list.index_map(
-    writerlys,
-    fn (writerly, i) {
-      echo_writerly(writerly, "contents_test writerly fragment # " <> ins(i + 1))
-      io.println("")
-    }
-  )
-
-  io.println("")
-
-  list.index_map(
-    vxmls,
-    fn (vxml, i) {
-      vx.echo_vxml(vxml, "contents_test vxml fragment # " <> ins(i + 1))
-      io.println("")
-    }
-  )
-
-  io.println("")
-}
-
 //***************************************************
 //* vxml to writerly (canonical transformation) (?) *
 //***************************************************
@@ -1603,32 +1561,32 @@ fn escape_left_spaces_in_string(s: String) -> String {
 }
 
 fn escape_left_spaces(
-  contents: List(BlamedContent),
-) -> List(BlamedContent) {
-  list.map(contents, fn(blamed_content) {
-    BlamedContent(
-      blamed_content.blame,
-      blamed_content.content |> escape_left_spaces_in_string,
+  contents: List(Line),
+) -> List(Line) {
+  list.map(contents, fn(line) {
+    Line(
+      line.blame,
+      line.content |> escape_left_spaces_in_string,
     )
   })
 }
 
 fn process_vxml_t_node(vxml: VXML) -> List(Writerly) {
-  let assert T(_, blamed_contents) = vxml
-  blamed_contents
-  |> list.index_map(fn(blamed_content, i) { #(i, blamed_content) })
+  let assert T(_, lines) = vxml
+  lines
+  |> list.index_map(fn(line, i) { #(i, line) })
   |> list.filter(fn(pair) {
-    let #(index, blamed_content) = pair
-    !is_whitespace(blamed_content.content)
+    let #(index, line) = pair
+    !is_whitespace(line.content)
     || index == 0
-    || index == list.length(blamed_contents) - 1
+    || index == list.length(lines) - 1
   })
   |> list.map(pair.second)
   |> escape_left_spaces
-  |> fn(blamed_contents) {
-    case blamed_contents {
+  |> fn(lines) {
+    case lines {
       [] -> []
-      [first, ..] -> [Blurb(first.blame, blamed_contents)]
+      [first, ..] -> [Blurb(first.blame, lines)]
     }
   }
 }
@@ -1687,6 +1645,48 @@ pub fn vxmls_to_writerlys(vxmls: List(VXML)) -> List(Writerly) {
 //**************
 // tests/main
 //**************
+
+fn contents_test() {
+  let dirname = "test/contents"
+
+  use #(_, lines) <- on_error_on_ok(
+    assemble_input_lines(dirname),
+    fn (error) {
+      io.println("assemble_input_lines error:" <> ins(error))
+    }
+  )
+
+  use writerlys <- on_error_on_ok(
+    parse_input_lines(lines),
+    fn (error) {
+      io.println("parse_input_lines error:" <> ins(error))
+    }
+  )
+
+  let vxmls =
+    writerlys
+    |> list.map(writerly_to_vxml)
+
+  list.index_map(
+    writerlys,
+    fn (writerly, i) {
+      echo_writerly(writerly, "contents_test writerly fragment # " <> ins(i + 1))
+      io.println("")
+    }
+  )
+
+  io.println("")
+
+  list.index_map(
+    vxmls,
+    fn (vxml, i) {
+      vx.echo_vxml(vxml, "contents_test vxml fragment # " <> ins(i + 1))
+      io.println("")
+    }
+  )
+
+  io.println("")
+}
 
 fn html_test() {
   let path = "test/ch5_ch.xml"

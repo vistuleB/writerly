@@ -1,5 +1,5 @@
 |> Section
-    handle sec1
+    handle=sec1
 
     |> Example
 
@@ -9,17 +9,16 @@
         attr1 val1
 
 |> Section
-    handle sec2
+    handleosec2
 
     Paragraph 1.
 
     Paragraph 2.
 
     |> Example
-
         Hello.
 
     |> Image
-        attr1 val1
+        attr1=val1
 
     Paragraph 3.

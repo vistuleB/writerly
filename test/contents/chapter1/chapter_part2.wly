@@ -7,4 +7,4 @@
         Solution paragraph 1.
 
         |> Image
-            attr1 val1
+            attr1=val1
