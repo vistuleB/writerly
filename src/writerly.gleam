@@ -1220,7 +1220,7 @@ pub fn writerly_to_vxml(t: Writerly) -> VXML {
         children: [],
       )
 
-    Blurb(blame, lines) -> T(blame: blame, contents: lines)
+    Blurb(blame, lines) -> T(blame: blame, lines: lines)
 
     CodeBlock(blame, annotation, lines) ->
       V(
@@ -1233,7 +1233,7 @@ pub fn writerly_to_vxml(t: Writerly) -> VXML {
             annotation,
           ),
         ],
-        children: [T(blame: blame, contents: lines)],
+        children: [T(blame: blame, lines: lines)],
       )
 
     Tag(blame, tag, attributes, children) -> {
