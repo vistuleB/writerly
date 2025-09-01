@@ -10,34 +10,20 @@ import gleam/result
 import gleam/regexp
 import gleam/string.{inspect as ins}
 import simplifile
-import vxml.{type Attribute, type Line, type VXML, Attribute, Line, T, V} as vx
+import vxml.{type Attribute, type TextLine, type VXML, Attribute, TextLine, T, V} as vx
 import dirtree as dt
+import on
 
 const debug = False
 
-// ****************
-// * utils
-// ****************
-
-fn on_error_on_ok(
-  result r: Result(a, b),
-  on_error on_error: fn(b) -> c,
-  with_on_ok on_ok: fn(a) -> c,
-) -> c {
-  case r {
-    Error(b) -> on_error(b)
-    Ok(a) -> on_ok(a)
-  }
-}
-
-// ****************
-// * public types
-// ****************
+// ************************************************************
+// public types
+// ************************************************************
 
 pub type Writerly {
   BlankLine(blame: Blame)
-  Blurb(blame: Blame, lines: List(Line))
-  CodeBlock(blame: Blame, annotation: String, lines: List(Line))
+  Blurb(blame: Blame, lines: List(TextLine))
+  CodeBlock(blame: Blame, annotation: String, lines: List(TextLine))
   Tag(
     blame: Blame,
     name: String,
@@ -110,11 +96,11 @@ type NonemptySuffixDiagnostic {
 
 type TentativeWriterly {
   TentativeBlankLine(blame: Blame)
-  TentativeBlurb(blame: Blame, contents: List(Line))
+  TentativeBlurb(blame: Blame, contents: List(TextLine))
   TentativeCodeBlock(
     blame: Blame,
     annotation: String,
-    contents: List(Line),
+    contents: List(TextLine),
   )
   TentativeTag(
     blame: Blame,
@@ -364,7 +350,7 @@ fn fast_forward_past_attribute_lines_at_indent(
 fn fast_forward_past_other_lines_at_indent(
   indent: Int,
   head: FileHead,
-) -> #(List(Line), FileHead) {
+) -> #(List(TextLine), FileHead) {
   case current_line(head) {
     None -> #([], head)
 
@@ -380,7 +366,7 @@ fn fast_forward_past_other_lines_at_indent(
             True -> #([], head)
 
             False -> {
-              let line = Line(blame, suffix)
+              let line = TextLine(blame, suffix)
 
               let #(more_lines, head_after_others) =
                 fast_forward_past_other_lines_at_indent(
@@ -403,7 +389,7 @@ fn fast_forward_past_other_lines_at_indent(
 fn fast_forward_to_closing_backticks(
   indent: Int,
   head: FileHead,
-) -> Result(#(List(Line), FileHead), ClosingBackTicksError) {
+) -> Result(#(List(TextLine), FileHead), ClosingBackTicksError) {
   case current_line(head) {
     None -> Error(NoBackticksFound(head))
 
@@ -413,7 +399,7 @@ fn fast_forward_to_closing_backticks(
           case fast_forward_to_closing_backticks(indent, move_forward(head)) {
             Ok(#(lines, head_after_closing_backticks)) -> {
               let line =
-                Line(
+                TextLine(
                   blame,
                   string.repeat(" ", int.max(0, suffix_indent - indent)),
                 )
@@ -437,7 +423,7 @@ fn fast_forward_to_closing_backticks(
               let assert True = padded_suffix_length >= string.length(suffix)
               let padded_suffix =
                 string.pad_start(suffix, to: padded_suffix_length, with: " ")
-              let line = Line(blame, padded_suffix)
+              let line = TextLine(blame, padded_suffix)
 
               case
                 suffix_indent > indent || !string.starts_with(suffix, "```")
@@ -515,14 +501,14 @@ fn tentative_first_non_blank_line_is_blurb(
   }
 }
 
-fn remove_starting_escapes(contents: List(Line)) -> List(Line) {
+fn remove_starting_escapes(contents: List(TextLine)) -> List(TextLine) {
   let assert Ok(re) = regexp.from_string("^\\\\+\\s")
   list.map(contents, fn(line) {
     let new_content = case regexp.check(re, line.content) {
       False -> line.content
       True -> line.content |> string.drop_start(1)
     }
-    Line(line.blame, new_content)
+    TextLine(line.blame, new_content)
   })
 }
 
@@ -780,7 +766,7 @@ fn tentative_parse_at_indent(
 
                     Other(_) -> {
                       let blame = blame
-                      let line = Line(blame, suffix)
+                      let line = TextLine(blame, suffix)
 
                       let #(more_lines, head_after_others) =
                         fast_forward_past_other_lines_at_indent(
@@ -913,14 +899,14 @@ fn tentative_error_blame_and_type_and_message(
 }
 
 fn line_to_output_line(
-  line: Line,
+  line: TextLine,
   indentation: Int,
 ) -> OutputLine {
   OutputLine(line.blame, indentation, line.content)
 }
 
 fn lines_to_output_lines(
-  lines: List(Line),
+  lines: List(TextLine),
   indentation: Int,
 ) -> List(OutputLine) {
   lines
@@ -1047,9 +1033,9 @@ pub fn writerly_annotate_blames(writerly: Writerly) -> Writerly {
       Blurb(
         blame |> pc("Blurb"),
         list.index_map(lines, fn(line, i) {
-          Line(
+          TextLine(
             line.blame
-              |> pc("Blurb > Line(" <> ins(i + 1) <> ")"),
+              |> pc("Blurb > TextLine(" <> ins(i + 1) <> ")"),
             line.content,
           )
         }),
@@ -1059,9 +1045,9 @@ pub fn writerly_annotate_blames(writerly: Writerly) -> Writerly {
         blame |> pc("CodeBlock:" <> annotation),
         annotation,
         list.index_map(lines, fn(line, i) {
-          Line(
+          TextLine(
             line.blame
-              |> pc("CodeBlock > Line(" <> ins(i + 1) <> ")"),
+              |> pc("CodeBlock > TextLine(" <> ins(i + 1) <> ")"),
             line.content,
           )
         }),
@@ -1523,29 +1509,29 @@ pub fn assemble_input_lines(
   assemble_input_lines_advanced_mode(dirname, [])
 }
 
-//***************************
-//* assemble_and_parse
-//***************************
+// ************************************************************
+// assemble_and_parse
+// ************************************************************
 
 pub fn assemble_and_parse(
   dir_or_filename: String,
 ) -> Result(List(Writerly), AssemblyOrParseError) {
-  use #(_, assembled) <- on_error_on_ok(
+  use #(_, assembled) <- on.error_ok(
     assemble_input_lines(dir_or_filename),
-    fn(e) {Error(AssemblyError(e))},
+    fn(e) { Error(AssemblyError(e)) },
   )
 
-  use writerlys <- on_error_on_ok(
+  use writerlys <- on.error_ok(
     parse_input_lines(assembled),
-    fn(e) {Error(ParseError(e))},
+    fn(e) { Error(ParseError(e)) },
   )
 
   Ok(writerlys)
 }
 
-//***************************************************
-//* vxml to writerly (canonical transformation) (?) *
-//***************************************************
+// ************************************************************
+// vxml to writerly (canonical transformation) (?)
+// ************************************************************
 
 fn is_whitespace(s: String) -> Bool {
   string.trim(s) == ""
@@ -1561,10 +1547,10 @@ fn escape_left_spaces_in_string(s: String) -> String {
 }
 
 fn escape_left_spaces(
-  contents: List(Line),
-) -> List(Line) {
+  contents: List(TextLine),
+) -> List(TextLine) {
   list.map(contents, fn(line) {
-    Line(
+    TextLine(
       line.blame,
       line.content |> escape_left_spaces_in_string,
     )
@@ -1642,21 +1628,21 @@ pub fn vxmls_to_writerlys(vxmls: List(VXML)) -> List(Writerly) {
   |> list.flatten
 }
 
-//**************
+// ************************************************************
 // tests/main
-//**************
+// ************************************************************
 
 fn contents_test() {
   let dirname = "test/contents"
 
-  use #(_, lines) <- on_error_on_ok(
+  use #(_, lines) <- on.error_ok(
     assemble_input_lines(dirname),
     fn (error) {
       io.println("assemble_input_lines error:" <> ins(error))
     }
   )
 
-  use writerlys <- on_error_on_ok(
+  use writerlys <- on.error_ok(
     parse_input_lines(lines),
     fn (error) {
       io.println("parse_input_lines error:" <> ins(error))
@@ -1691,11 +1677,11 @@ fn contents_test() {
 fn html_test() {
   let path = "test/ch5_ch.xml"
 
-  use content <- on_error_on_ok(simplifile.read(path), fn(_) {
+  use content <- on.error_ok(simplifile.read(path), fn(_) {
     io.println("could not read file " <> path)
   })
 
-  use vxml <- on_error_on_ok(vx.xmlm_based_html_parser(content, path), fn(e) {
+  use vxml <- on.error_ok(vx.xmlm_based_html_parser(content, path), fn(e) {
     io.println("xmlm_based_html_parser error: " <> ins(e))
   })
 
@@ -1726,12 +1712,12 @@ fn html_test() {
 fn sample_test() {
   let filename = "test/sample.wly"
 
-  use contents <- on_error_on_ok(
+  use contents <- on.error_ok(
     simplifile.read(filename),
     fn(e) {io.println("there was an io error: " <> ins(e))}
   )
 
-  use writerlys <- on_error_on_ok(
+  use writerlys <- on.error_ok(
     parse_string(contents, filename),
     fn(e) {io.println("there was a parsing error: " <> ins(e))}
   )
