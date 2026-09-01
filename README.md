@@ -1,5 +1,8 @@
 # Writerly
 
+[![Package Version](https://img.shields.io/hexpm/v/writerly)](https://hex.pm/packages/writerly)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/writerly/)
+
 Writerly is a lightweight, indentation-based markup language for authoring
 tree-structured documents that resemble ordinary prose. Its syntax is
 descended from [Elm-Markup](https://github.com/mdgriffith/elm-markup).
