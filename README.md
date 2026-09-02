@@ -181,11 +181,12 @@ attributes. Commented-out element attributes use keys of the form
 Applications should use the public helper functions for recognizing and
 constructing these keys rather than assembling them by hand.
 
-### Handle conventions
+### Cross-document references
 
-Handles are an official Writerly convention rather than part of the core
-parser grammar. They connect a definition site to one or more usage sites.
-A definition may be an ordinary element attribute:
+Writerly has an official convention for cross-document references based on
+*handles*. A handle connects a definition site to one or more usage sites.
+Handle syntax is interpreted by editor tooling and desugaring rather than by
+the core parser. A definition may be an ordinary element attribute:
 
 ```writerly
 |> Theorem
@@ -214,9 +215,8 @@ abel-inversion\##<< is ordinary text
 The [full handle grammar](#handle-grammar) at the end of this README describes
 additional definition forms, escaping rules, and other capabilities.
 
-The core parser gives handle forms no special VXML representation: `handle`
-remains an ordinary attribute and in-text forms remain text. Projects interpret
-them later through desugaring. The
+In parsed VXML, `handle` remains an ordinary attribute and in-text handle forms
+remain text. Projects interpret them later through desugaring. The
 [VXML Pipeline](https://hex.pm/packages/vxml_pipeline) package supplies shared
 handle desugarers.
 
