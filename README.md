@@ -98,46 +98,23 @@ Add the package to a Gleam project:
 gleam add writerly
 ```
 
-Parse a source string containing any number of top-level nodes:
+Parse a source string with one non-blank top-level element directly to VXML:
 
 ```gleam
 import writerly
+import vxml/io_lines
 
 pub fn parse(source: String) {
-  writerly.string_to_writerlys(source, "example.wly")
+  source
+  |> io_lines.string_to_input_lines("example.wly", 0)
+  |> writerly.input_lines_to_vxml
 }
 ```
 
-Use `string_to_writerly` instead when exactly one non-blank top-level node is
-required. The corresponding `input_lines_to_writerlys` and
-`input_lines_to_writerly` functions accept VXML `InputLine` values, preserving
-source provenance through their `Blame` fields.
-
-Writerly trees can be converted to VXML and serialized again:
-
-```gleam
-pub fn convert(source: String) {
-  let assert Ok(document) =
-    writerly.string_to_writerly(source, "example.wly")
-
-  let vxml = writerly.writerly_to_vxml(document)
-  let serialized = writerly.writerly_to_string(document)
-
-  #(vxml, serialized)
-}
-```
-
-The central syntax tree is:
-
-```gleam
-pub type Writerly {
-  BlankLine(blame: Blame)
-  Paragraph(blame: Blame, lines: List(Line))
-  Comment(blame: Blame, lines: List(Line))
-  CodeBlock(blame: Blame, attrs: List(Attr), lines: List(Line))
-  Tag(blame: Blame, name: String, attrs: List(Attr), children: List(Writerly))
-}
-```
+`input_lines_to_vxml` preserves source provenance through VXML `Blame` values.
+The lower-level `string_to_writerlys` and `input_lines_to_writerlys` functions
+are available when a source contains multiple top-level nodes; convert their
+results with `writerlys_to_vxmls`.
 
 ### Multi-file documents
 
@@ -222,7 +199,8 @@ handle desugarers.
 
 The
 [Writerly extension for VS Code](https://github.com/vistuleB/writerly-vscode-extension#handles)
-provides navigation, completion, rename support, and diagnostics.
+provides navigation, completion, rename support, and diagnostics for handles
+that follow the same grammar.
 
 ### Inline formatting
 
@@ -325,6 +303,7 @@ Whitespace surrounding the name after `|>` is trimmed. A tag name must match:
 [A-Za-z_:][-A-Za-z0-9._:]*
 ```
 
+The result is an ordinary VXML element with the same tag name.
 Attributes and children occur on subsequent lines, indented four more spaces.
 An element ends when the indentation returns to that element's level or lower.
 Closing tags are not written.
@@ -346,8 +325,9 @@ The first `=` separates the key and value. An attribute key must match:
 [A-Za-z_][-A-Za-z0-9._:]*
 ```
 
-Attribute values are trimmed at both ends. More than 100 leading spaces after
-the `=` are rejected. Empty values are allowed.
+The key and value become an ordinary VXML attribute. Attribute values are
+trimmed at both ends. More than 100 leading spaces after the `=` are rejected.
+Empty values are allowed.
 
 Attribute parsing stops at the first line that is not a valid attribute. If an
 element's first text line resembles an attribute, insert a blank line before
@@ -361,9 +341,9 @@ it:
 
 ### Paragraphs and text lines
 
-Consecutive ordinary lines at the same indentation form one `Paragraph`.
-After removing structural indentation, Writerly preserves the remaining text,
-including trailing whitespace.
+Consecutive ordinary lines at the same indentation become the `Line` values
+of one VXML text node. After removing structural indentation, Writerly
+preserves the remaining text, including trailing whitespace.
 
 Leading spaces in text content cannot be written directly because leading
 spaces normally express structural indentation. To preserve them, place a
@@ -382,14 +362,16 @@ the text. The serializer inserts one escape when required.
 
 ### Blank lines
 
-Every empty source line becomes a `BlankLine`. Blank lines are semantic nodes:
-adding or removing one changes the Writerly tree. Their meaning, if any, is
-assigned by later processing.
+Every empty source line becomes an empty VXML element named
+`WriterlyBlankLine`. Blank lines are therefore semantic nodes: adding or
+removing one changes the VXML tree. Their meaning, if any, is assigned by later
+processing.
 
 ### Comments
 
-At ordinary child position, consecutive lines beginning with `!!` form one
-`Comment` node. The `!!` marker is removed from the stored line content:
+At ordinary child position, consecutive lines beginning with `!!` become one
+`WriterlyComment` VXML element containing a text node. The `!!` marker is
+removed from the stored line content:
 
 ```writerly
 !! first comment line
@@ -397,8 +379,8 @@ At ordinary child position, consecutive lines beginning with `!!` form one
 ```
 
 In the attribute region immediately following an element, an `!!` line is
-instead stored as a commented-out attribute. The number of spaces after `!!`
-is preserved, up to a maximum of 100:
+instead stored as a synthetic VXML attribute. The number of spaces after `!!`
+is preserved in its key, up to a maximum of 100:
 
 ```writerly
 |> figure
@@ -409,7 +391,8 @@ is preserved, up to a maximum of 100:
 ### Fenced code blocks
 
 A line beginning with three backticks opens a code block. A line containing
-three backticks at the same indentation closes it:
+three backticks at the same indentation closes it. The result is a
+`WriterlyCodeBlock` VXML element:
 
 ````writerly
 ```gleam
@@ -441,8 +424,8 @@ leading info string and structured annotations.
 
 ### Top-level cardinality
 
-A document may contain any number of top-level nodes.
-`string_to_writerlys` and `input_lines_to_writerlys` return all of them.
-`string_to_writerly` and `input_lines_to_writerly` require exactly one
-non-blank top-level node; otherwise they return `MissingRoot` or
-`NonUniqueRoot`.
+A Writerly source may contain any number of top-level nodes, but parsing it as
+one VXML tree requires exactly one non-blank root. `input_lines_to_vxml`
+returns `MissingRoot` or `NonUniqueRoot` when that requirement is not met. For
+multiple roots, use `string_to_writerlys` or `input_lines_to_writerlys`, then
+convert the result to a list of VXML nodes with `writerlys_to_vxmls`.
