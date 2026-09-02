@@ -226,7 +226,7 @@ fenced code blocks without prescribing a built-in rich-text vocabulary. This
 is one respect in which Writerly may differ from syntax familiar from
 Elm-Markup and other lightweight markup languages.
 
-## Technical Syntax Reference
+## Syntax Reference
 
 ### Source and indentation
 
@@ -494,30 +494,63 @@ belong to later desugaring stages.
 
 ### Example
 
-Given this Writerly source:
+Given this Writerly source, patterned after a project chapter:
 
-```writerly
-|> Article
-    id=intro
-    |> Title
-        A short example.
-    |> Paragraph
-        Writerly text can span
-        more than one line.
-```
+````writerly
+|> Chapter
+    title=An illustrative chapter
 
-parsing and conversion produce the following serialized VXML:
+    This opening paragraph has three lines,
+    the third of which starts with an  
+    \ escaped space, and the second of which has two trailing spaces.
+
+
+    |> Example
+        label=A small program
+        !! class=draft
+        style=color:red
+        ```gleam&id=answer&listing=true
+        pub fn answer() {
+          42
+        }
+        ```
+
+    !! This comment block remains
+    !! available to later processing.
+    \```text, not a code fence
+````
+
+Parsing and conversion produce the following serialized VXML:
 
 ```vxml
-<> Article
-  id=intro
-  <> Title
+<> Chapter
+  title=An illustrative chapter
+  <> WriterlyBlankLine
+  <>
+    'This opening paragraph has three lines,'
+    'the third of which starts with an  '
+    ' escaped space, and the second of which has two trailing spaces.'
+  <> WriterlyBlankLine
+  <> WriterlyBlankLine
+  <> Example
+    label=A small program
+    WriterlyCommentedAttribute1Spaces=class=draft
+    style=color:red
+    <> WriterlyCodeBlock
+      WriterlyCodeBlockInfoStringPrefix=gleam
+      id=answer
+      listing=true
+      <>
+        'pub fn answer() {'
+        '  42'
+        '}'
+  <> WriterlyBlankLine
+  <> WriterlyComment
     <>
-      'A short example.'
-  <> Paragraph
-    <>
-      'Writerly text can span'
-      'more than one line.'
+      ' This comment block remains'
+      ' available to later processing.'
+  <>
+    '```text, not a code fence'
 ```
 
 The in-memory VXML additionally associates a `Blame` value with every element,
