@@ -4,7 +4,7 @@ import gleam/option.{Some}
 import gleam/string
 import gleeunit
 import gleeunit/should
-import vxml.{type Attr, Attr, Line}
+import vxml.{type Attr, Attr, Line, T, V}
 import vxml/blame.{Anchored, Movable, Src, no_blame} as _bl
 import vxml/io_lines.{InputLine} as io_l
 import writerly.{type Writerly, Paragraph} as wl
@@ -57,7 +57,7 @@ fn assert_round_trip(source: String) {
   source
   |> parse_fixture
   |> wl.writerly_to_string
-  |> should.equal(normalize_fixture(source))
+  |> should.equal(Ok(normalize_fixture(source)))
 }
 
 fn attr_pairs(attrs: List(Attr)) -> List(#(String, String)) {
@@ -135,6 +135,29 @@ pub fn parser_builds_a_tag_with_an_attribute_test() {
       ),
     ]),
   )
+}
+
+pub fn attribute_values_preserve_leading_and_trim_trailing_whitespace_test() {
+  let source =
+    "|> figure\n    offset-x=-4.04em\n    offset-y= 4.04em \t\n    tab=\tvalue\t"
+  let assert Ok(
+    wl.Tag(
+      _,
+      "figure",
+      [
+        Attr(_, "offset-x", "-4.04em"),
+        Attr(_, "offset-y", " 4.04em"),
+        Attr(_, "tab", "\tvalue"),
+      ],
+      [],
+    ) as writerly,
+  ) = wl.string_to_writerly(source, "doc")
+
+  writerly
+  |> wl.writerly_to_string
+  |> should.equal(Ok(
+    "|> figure\n    offset-x=-4.04em\n    offset-y= 4.04em\n    tab=\tvalue",
+  ))
 }
 
 pub fn parser_preserves_paragraph_source_blame_test() {
@@ -317,13 +340,13 @@ pub fn commented_attribute_encoding_test() {
 
   key |> should.equal("WriterlyCommentedAttribute3Spaces")
   val |> should.equal("someguy=aa")
-  writerly |> wl.writerly_to_string |> should.equal(source)
+  writerly |> wl.writerly_to_string |> should.equal(Ok(source))
 
   let empty_source = "|> Book\n    !!"
   let assert Ok(empty_writerly) = wl.string_to_writerly(empty_source, "doc")
   let assert wl.Tag(_, "Book", [Attr(_, empty_key, "")], []) = empty_writerly
   empty_key |> should.equal("WriterlyCommentedAttribute0Spaces")
-  empty_writerly |> wl.writerly_to_string |> should.equal(empty_source)
+  empty_writerly |> wl.writerly_to_string |> should.equal(Ok(empty_source))
 }
 
 pub fn commented_attribute_key_helpers_test() {
@@ -345,13 +368,13 @@ pub fn code_block_info_string_and_attributes_round_trip_test() {
   ) = wl.string_to_writerly(source, "doc")
   attr_pairs(attrs)
   |> should.equal([
-    #(wl.code_block_info_string_attribute_key, "python"),
+    #(wl.code_block_info_string_prefix_attribute_key, "python"),
     #("id", "example"),
     #("title", "a&b"),
     #("path", "c\\d"),
     #("empty", ""),
   ])
-  writerly |> wl.writerly_to_string |> should.equal(source)
+  writerly |> wl.writerly_to_string |> should.equal(Ok(source))
 }
 
 pub fn code_block_info_string_attribute_may_appear_anywhere_test() {
@@ -360,39 +383,107 @@ pub fn code_block_info_string_attribute_may_appear_anywhere_test() {
       no_blame,
       [
         Attr(no_blame, "id", "example"),
-        Attr(no_blame, wl.code_block_info_string_attribute_key, " python "),
+        Attr(
+          no_blame,
+          wl.code_block_info_string_prefix_attribute_key,
+          " python ",
+        ),
         Attr(no_blame, "class", " listing "),
       ],
       [],
     )
 
-  let serialized = "```python&id=example&class=listing\n```"
-  writerly |> wl.writerly_to_string |> should.equal(serialized)
+  let serialized = "```python&id=example&class= listing\n```"
+  writerly |> wl.writerly_to_string |> should.equal(Ok(serialized))
 
   let assert Ok(wl.CodeBlock(_, attrs, [])) =
     wl.string_to_writerly(serialized, "doc")
   attr_pairs(attrs)
   |> should.equal([
-    #(wl.code_block_info_string_attribute_key, "python"),
+    #(wl.code_block_info_string_prefix_attribute_key, "python"),
     #("id", "example"),
-    #("class", "listing"),
+    #("class", " listing"),
   ])
 }
 
-fn assert_excessive_leading_spaces(source: String) {
-  let assert Error(wl.ExcessiveLeadingAttributeSpaces(_, 100, 101)) =
+pub fn writerly_serialization_rejects_excessive_leading_attribute_whitespace_test() {
+  let value = string.repeat(" ", 101) <> "hidden"
+  wl.Tag(no_blame, "Book", [Attr(no_blame, "key", value)], [])
+  |> wl.writerly_to_string
+  |> should.equal(
+    Error(wl.ExcessiveLeadingAttributeWhitespaceInSerialization(
+      no_blame,
+      100,
+      101,
+    )),
+  )
+}
+
+fn assert_excessive_leading_whitespace(source: String) {
+  let assert Error(wl.ExcessiveLeadingAttributeWhitespace(_, 100, 101)) =
     wl.string_to_writerly(source, "doc")
   Nil
 }
 
-pub fn parser_rejects_excessive_leading_attribute_spaces_test() {
+pub fn parser_rejects_excessive_leading_attribute_whitespace_test() {
   let excessive = string.repeat(" ", 101)
 
-  assert_excessive_leading_spaces("|> Book\n    key=" <> excessive <> "hidden")
+  assert_excessive_leading_whitespace(
+    "|> Book\n    key=" <> excessive <> "hidden",
+  )
 
-  assert_excessive_leading_spaces("|> Book\n    !!" <> excessive <> "key=value")
+  assert_excessive_leading_whitespace(
+    "|> Book\n    !!" <> excessive <> "key=value",
+  )
 
-  assert_excessive_leading_spaces(
+  assert_excessive_leading_whitespace(
     "|> Book\n    ```python&id=" <> excessive <> "hidden\n    ```",
   )
+
+  assert_excessive_leading_whitespace(
+    "|> Book\n    key=" <> string.repeat("\t", 101) <> "hidden",
+  )
+}
+
+pub fn vxml_to_writerly_rejects_malformed_reserved_nodes_test() {
+  wl.vxml_to_writerly(V(no_blame, "WriterlyBlankLine", [], [T(no_blame, [])]))
+  |> should.equal(Error(wl.MalformedBlankLine(no_blame)))
+
+  wl.vxml_to_writerly(
+    V(no_blame, "WriterlyCodeBlock", [], [
+      T(no_blame, [Line(no_blame, "one")]),
+      T(no_blame, [Line(no_blame, "two")]),
+    ]),
+  )
+  |> should.equal(Error(wl.MalformedCodeBlock(no_blame)))
+
+  wl.vxml_to_writerly(V(no_blame, "WriterlyComment", [], []))
+  |> should.equal(Error(wl.MalformedComment(no_blame)))
+}
+
+pub fn vxml_to_writerly_rejects_empty_text_node_test() {
+  wl.vxml_to_writerly(T(no_blame, []))
+  |> should.equal(Error(wl.EmptyTextNode(no_blame)))
+}
+
+pub fn writerly_serialization_rejects_empty_line_collections_test() {
+  wl.writerly_to_string(wl.Paragraph(no_blame, []))
+  |> should.equal(Error(wl.EmptyParagraph(no_blame)))
+
+  wl.writerly_to_string(wl.Comment(no_blame, []))
+  |> should.equal(Error(wl.EmptyComment(no_blame)))
+}
+
+pub fn writerly_serialization_rejects_duplicate_info_prefix_test() {
+  let prefix = wl.code_block_info_string_prefix_attribute_key
+  wl.CodeBlock(
+    no_blame,
+    [
+      Attr(no_blame, prefix, "python"),
+      Attr(no_blame, prefix, "gleam"),
+    ],
+    [],
+  )
+  |> wl.writerly_to_string
+  |> should.equal(Error(wl.DuplicateCodeBlockInfoStringPrefix(no_blame)))
 }

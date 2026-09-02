@@ -151,12 +151,18 @@ reserved element names:
 - `WriterlyCodeBlock` represents a fenced code block;
 - `WriterlyComment` represents a comment block.
 
-The synthetic attribute `WriterlyCodeBlockInfoString` stores the leading info
-string from a code fence. Structured fence annotations become ordinary VXML
-attributes. Commented-out element attributes use keys of the form
+The synthetic attribute `WriterlyCodeBlockInfoStringPrefix` stores the
+nonempty, unmarked prefix of a code fence's info string: the part before its
+first unescaped `&key=value` annotation. The attribute is absent when that
+prefix is empty. Structured fence annotations become ordinary VXML attributes.
+Commented-out element attributes use keys of the form
 `WriterlyCommentedAttribute<N>Spaces`, where `N` records their original spacing.
 Applications should use the public helper functions for recognizing and
 constructing these keys rather than assembling them by hand.
+
+VXML-to-Writerly conversion and Writerly serialization return `Result` values.
+Malformed reserved elements, empty text nodes, and malformed manually
+constructed Writerly nodes are reported as `SerializationError` values.
 
 ### Cross-document references
 
@@ -188,6 +194,10 @@ A single backslash suppresses either kind of in-text recognition:
 abel-inversion\##<< is ordinary text
 \>>abel-inversion is ordinary text
 ```
+
+Inside fenced code-block content, in-text handle definitions remain active,
+but `>>handle` usages are ordinary code text. Neither form is recognized on
+the opening or closing fence line.
 
 The [full handle grammar](#handle-grammar) at the end of this README describes
 additional definition forms, escaping rules, and other capabilities.
@@ -229,8 +239,19 @@ decorator:     # followed by one or more Unicode letters, numbers, marks, _ : ' 
 Thus a name cannot end with `.`, `:`, or `-`. Decorators follow the name and
 are metadata rather than part of the indexed handle.
 
-An attribute definition is `handle=name` in an element's attribute zone. An
-in-text definition has either of these forms:
+An attribute definition in an element's attribute zone is either bare or
+assigned:
+
+```writerly
+handle=name
+handle=name <<value>>
+```
+
+The bare form has an empty value. In the assigned form, the first `<<` and
+final `>>` delimit the value; the value itself may contain `<<` or `>>`.
+The handle name may include decorators according to the grammar above.
+
+An in-text definition has either of these forms:
 
 ```text
 <boundary>name<decorators>##<<
@@ -325,9 +346,9 @@ The first `=` separates the key and value. An attribute key must match:
 [A-Za-z_][-A-Za-z0-9._:]*
 ```
 
-The key and value become an ordinary VXML attribute. Attribute values are
-trimmed at both ends. More than 100 leading spaces after the `=` are rejected.
-Empty values are allowed.
+The key and value become an ordinary VXML attribute. Leading spaces and tabs
+after the `=` are preserved as part of the value, up to a maximum of 100.
+Trailing spaces and tabs are trimmed. Empty values are allowed.
 
 Attribute parsing stops at the first line that is not a valid attribute. If an
 element's first text line resembles an attribute, insert a blank line before
@@ -416,9 +437,10 @@ annotations written as `&key=value`:
 ```
 ````
 
-Annotation keys follow the attribute-key grammar. Values are trimmed and obey
-the same 100-leading-space limit as element attributes. Write `\&` for a
-literal ampersand and `\\` for a literal backslash in the info string or an
+Annotation keys follow the attribute-key grammar. Their values preserve leading
+spaces and tabs, trim trailing spaces and tabs, and obey the same 100-character
+leading-whitespace limit as element attributes. Write `\&` for a literal
+ampersand and `\\` for a literal backslash in the info string or an
 annotation. Parsing and serialization preserve the distinction between the
 leading info string and structured annotations.
 

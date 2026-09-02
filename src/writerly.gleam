@@ -52,7 +52,7 @@ pub type ParseError {
     opening_blame: Blame,
     annotation: String,
   )
-  ExcessiveLeadingAttributeSpaces(blame: Blame, maximum: Int, found: Int)
+  ExcessiveLeadingAttributeWhitespace(blame: Blame, maximum: Int, found: Int)
   NonUniqueRoot(blame: Blame)
   MissingRoot(blame: Blame)
 }
@@ -64,15 +64,33 @@ pub type AssemblyError {
   NoFilesFound(String)
 }
 
+/// An error encountered while converting VXML to Writerly or serializing
+/// Writerly source.
+pub type SerializationError {
+  EmptyTextNode(blame: Blame)
+  MalformedBlankLine(blame: Blame)
+  MalformedCodeBlock(blame: Blame)
+  MalformedComment(blame: Blame)
+  EmptyParagraph(blame: Blame)
+  EmptyComment(blame: Blame)
+  DuplicateCodeBlockInfoStringPrefix(blame: Blame)
+  ExcessiveLeadingAttributeWhitespaceInSerialization(
+    blame: Blame,
+    maximum: Int,
+    found: Int,
+  )
+}
+
 const commented_attribute_key_prefix = "WriterlyCommentedAttribute"
 
 const commented_attribute_key_suffix = "Spaces"
 
 const maximum_leading_attribute_spaces = 100
 
-/// The synthetic VXML attribute that carries a code block's leading info
-/// string separately from its structured `&key=value` annotations.
-pub const code_block_info_string_attribute_key = "WriterlyCodeBlockInfoString"
+/// The synthetic VXML attribute key used for the nonempty, unmarked prefix
+/// of a code block's info string: the part before its first unescaped
+/// `&key=value` annotation. The attribute is absent when that prefix is empty.
+pub const code_block_info_string_prefix_attribute_key = "WriterlyCodeBlockInfoStringPrefix"
 
 /// Returns the encoded number of spaces in a Writerly commented attribute.
 /// Only keys encoding between zero and 100 spaces are recognized.
@@ -125,19 +143,34 @@ fn split_leading_spaces(value: String, spaces: Int) -> #(Int, String) {
   }
 }
 
+fn leading_attribute_whitespace_count(value: String, count: Int) -> Int {
+  case value {
+    " " <> rest | "\t" <> rest ->
+      leading_attribute_whitespace_count(rest, count + 1)
+    _ -> count
+  }
+}
+
+fn trim_trailing_attribute_whitespace(value: String) -> String {
+  case string.ends_with(value, " ") || string.ends_with(value, "\t") {
+    True -> trim_trailing_attribute_whitespace(string.drop_end(value, 1))
+    False -> value
+  }
+}
+
 fn parse_attribute_value(
   blame: Blame,
   raw_value: String,
 ) -> Result(String, ParseError) {
-  let #(spaces, _) = split_leading_spaces(raw_value, 0)
-  case spaces > maximum_leading_attribute_spaces {
+  let whitespace = leading_attribute_whitespace_count(raw_value, 0)
+  case whitespace > maximum_leading_attribute_spaces {
     True ->
-      Error(ExcessiveLeadingAttributeSpaces(
+      Error(ExcessiveLeadingAttributeWhitespace(
         blame,
         maximum_leading_attribute_spaces,
-        spaces,
+        whitespace,
       ))
-    False -> Ok(string.trim(raw_value))
+    False -> Ok(trim_trailing_attribute_whitespace(raw_value))
   }
 }
 
@@ -579,7 +612,7 @@ fn parse_attrs_at_indent(
       case spaces > maximum_leading_attribute_spaces {
         True ->
           on.Return(
-            Error(ExcessiveLeadingAttributeSpaces(
+            Error(ExcessiveLeadingAttributeWhitespace(
               blame,
               maximum_leading_attribute_spaces,
               spaces,
@@ -845,31 +878,34 @@ fn parse_code_block_at_indent(
   Ok(#([line, ..lines], rest))
 }
 
-fn attrs_to_code_block_info(attrs: List(Attr)) -> String {
+fn attrs_to_code_block_info(
+  attrs: List(Attr),
+) -> Result(String, SerializationError) {
   let #(info_attrs, attrs) =
     list.partition(attrs, fn(attr) {
-      attr.key == code_block_info_string_attribute_key
+      attr.key == code_block_info_string_prefix_attribute_key
     })
-  let info = case info_attrs {
-    [] -> None
-    [info] -> Some(info)
-    _ -> panic as "multiple WriterlyCodeBlockInfoString attributes"
-  }
+  use info <- on.ok(case info_attrs {
+    [] -> Ok(None)
+    [info] -> Ok(Some(info))
+    [_, duplicate, ..] ->
+      Error(DuplicateCodeBlockInfoStringPrefix(duplicate.blame))
+  })
   let escape = fn(s) {
     s
     |> string.replace("\\", "\\\\")
     |> string.replace("&", "\\&")
   }
-  let keyval_maker = fn(attr: Attr) -> String {
-    { attr.key <> "=" <> string.trim(attr.val) }
-    |> escape
+  let keyval_maker = fn(attr: Attr) -> Result(String, SerializationError) {
+    use value <- on.ok(attribute_value_for_serialization(attr))
+    Ok({ attr.key <> "=" <> value } |> escape)
   }
-  let keyvals = attrs |> list.map(keyval_maker)
+  use keyvals <- on.ok(attrs |> list.try_map(keyval_maker))
   let info = case info {
     None -> ""
     Some(info) -> info.val |> string.trim |> escape
   }
-  [info, ..keyvals] |> string.join("&")
+  Ok([info, ..keyvals] |> string.join("&"))
 }
 
 fn code_block_info_to_attrs(
@@ -886,7 +922,7 @@ fn code_block_info_to_attrs(
   })
 
   use <- on.false_true(info |> string.contains("&"), fn() {
-    Ok([Attr(blame, code_block_info_string_attribute_key, info)])
+    Ok([Attr(blame, code_block_info_string_prefix_attribute_key, info)])
   })
 
   let pieces = regexp.split(rgxs.unescaped_ampersand, info)
@@ -938,7 +974,7 @@ fn code_block_info_to_attrs(
   }
 
   let assert [info, ..keyvals] = keyvals
-  let info = Attr(info.0, code_block_info_string_attribute_key, info.1)
+  let info = Attr(info.0, code_block_info_string_prefix_attribute_key, info.1)
 
   use keyvals <- on.ok(
     list.try_map(keyvals, fn(kv) {
@@ -1169,92 +1205,83 @@ fn add_escapes_in_lines(contents: List(Line), re: Regexp) -> List(Line) {
   })
 }
 
-fn process_vxml_t_node(vxml: VXML) -> List(Writerly) {
-  let assert T(_, lines) = vxml
-  lines
-  |> list.index_map(fn(line, i) { #(i, line) })
-  |> list.filter(fn(pair) {
-    let #(index, line) = pair
-    !is_whitespace(line.content)
-    || index == 0
-    || index == list.length(lines) - 1
-  })
-  |> list.map(pair.second)
-  |> fn(lines) {
-    case lines {
-      [] -> []
-      [first, ..] -> [Paragraph(first.blame, lines)]
-    }
+fn process_vxml_t_node(
+  blame: Blame,
+  lines: List(Line),
+) -> Result(Writerly, SerializationError) {
+  let lines =
+    lines
+    |> list.index_map(fn(line, i) { #(i, line) })
+    |> list.filter(fn(pair) {
+      let #(index, line) = pair
+      !is_whitespace(line.content)
+      || index == 0
+      || index == list.length(lines) - 1
+    })
+    |> list.map(pair.second)
+  case lines {
+    [] -> Error(EmptyTextNode(blame))
+    [first, ..] -> Ok(Paragraph(first.blame, lines))
   }
 }
 
-fn is_t(vxml: VXML) -> Bool {
-  case vxml {
-    T(_, _) -> True
-    _ -> False
-  }
-}
-
-/// Converts one VXML node to zero or more Writerly nodes.
-///
-/// An empty VXML text node produces no Writerly node. Reserved Writerly
-/// elements must have the structure produced by `writerly_to_vxml`; malformed
-/// reserved elements cause an assertion failure.
-pub fn vxml_to_writerlys(vxml: VXML) -> List(Writerly) {
-  // This would return Writerly rather than List(Writerly), except that an
-  // empty text node produces no Writerly value.
+fn vxml_to_writerly_internal(
+  vxml: VXML,
+) -> Result(Writerly, SerializationError) {
   case vxml {
     V(blame, tag, attrs, children) -> {
       case tag {
         _ if tag == writerly_blank_line_vxml_tag -> {
-          assert attrs == []
-          assert children == []
-          [BlankLine(blame)]
+          case attrs, children {
+            [], [] -> Ok(BlankLine(blame))
+            _, _ -> Error(MalformedBlankLine(blame))
+          }
         }
         _ if tag == writerly_code_block_vxml_tag -> {
-          assert list.all(children, is_t)
-          let lines =
-            children
-            |> list.flat_map(fn(t) {
-              let assert T(_, lines) = t
-              lines
-            })
-          [CodeBlock(blame, attrs, lines)]
+          case children {
+            [] -> Ok(CodeBlock(blame, attrs, []))
+            [T(_, lines)] -> Ok(CodeBlock(blame, attrs, lines))
+            _ -> Error(MalformedCodeBlock(blame))
+          }
         }
         _ if tag == writerly_comment_vxml_tag -> {
-          let assert [T(_, lines)] = children
-          assert lines != []
-          [Comment(blame, lines)]
+          case children {
+            [T(_, [_, ..] as lines)] -> Ok(Comment(blame, lines))
+            _ -> Error(MalformedComment(blame))
+          }
         }
         _ -> {
-          let children = children |> vxmls_to_writerlys
-          [Tag(blame, tag, attrs, children)]
+          use children <- on.ok(vxmls_to_writerlys(children))
+          Ok(Tag(blame, tag, attrs, children))
         }
       }
     }
-    T(_, _) -> {
-      vxml |> process_vxml_t_node
-    }
+    T(blame, lines) -> process_vxml_t_node(blame, lines)
   }
 }
 
-/// Converts VXML nodes to Writerly nodes, omitting empty text nodes.
-pub fn vxmls_to_writerlys(vxmls: List(VXML)) -> List(Writerly) {
-  vxmls
-  |> list.map(vxml_to_writerlys)
-  |> list.flatten
+/// Converts one VXML node to a singleton list containing its Writerly node.
+///
+/// Reserved Writerly elements must have the structure produced by
+/// `writerly_to_vxml`.
+pub fn vxml_to_writerlys(
+  vxml: VXML,
+) -> Result(List(Writerly), SerializationError) {
+  vxml_to_writerly_internal(vxml)
+  |> result.map(fn(writerly) { [writerly] })
+}
+
+/// Converts VXML nodes to Writerly nodes in the same order.
+pub fn vxmls_to_writerlys(
+  vxmls: List(VXML),
+) -> Result(List(Writerly), SerializationError) {
+  vxmls |> list.try_map(vxml_to_writerly_internal)
 }
 
 /// Converts VXML that corresponds to exactly one Writerly node.
 ///
-/// Returns `Error(Nil)` for an empty text node. Panics if one VXML node expands
-/// into multiple Writerly nodes.
-pub fn vxml_to_writerly(vxml: VXML) -> Result(Writerly, Nil) {
-  case vxml |> vxml_to_writerlys {
-    [one] -> Ok(one)
-    [] -> Error(Nil)
-    _ -> panic as "expecting 0 or 1 writerlys"
-  }
+pub fn vxml_to_writerly(vxml: VXML) -> Result(Writerly, SerializationError) {
+  vxml_to_writerly_internal(vxml)
 }
 
 // ************************************************************
@@ -1269,9 +1296,11 @@ pub fn vxml_to_writerly(vxml: VXML) -> Result(Writerly, Nil) {
 ///
 /// This is intended for diagnostic tables. Source locations and node contents
 /// are otherwise unchanged.
-pub fn annotate_blames(writerly: Writerly) -> Writerly {
+pub fn annotate_blames(
+  writerly: Writerly,
+) -> Result(Writerly, SerializationError) {
   case writerly {
-    BlankLine(blame) -> BlankLine(blame |> pc("BlankLine"))
+    BlankLine(blame) -> Ok(BlankLine(blame |> pc("BlankLine")))
     Paragraph(blame, lines) ->
       Paragraph(
         blame |> pc("Blurb"),
@@ -1283,6 +1312,7 @@ pub fn annotate_blames(writerly: Writerly) -> Writerly {
           )
         }),
       )
+      |> Ok
     Comment(blame, lines) ->
       Comment(
         blame |> pc("Comment"),
@@ -1294,9 +1324,10 @@ pub fn annotate_blames(writerly: Writerly) -> Writerly {
           )
         }),
       )
+      |> Ok
     CodeBlock(blame, attrs, lines) -> {
-      let info = attrs_to_code_block_info(attrs)
-      CodeBlock(
+      use info <- on.ok(attrs_to_code_block_info(attrs))
+      Ok(CodeBlock(
         blame |> pc("CodeBlock:" <> info),
         attrs,
         list.index_map(lines, fn(line, i) {
@@ -1306,10 +1337,11 @@ pub fn annotate_blames(writerly: Writerly) -> Writerly {
             line.content,
           )
         }),
-      )
+      ))
     }
-    Tag(blame, tag, attrs, children) ->
-      Tag(
+    Tag(blame, tag, attrs, children) -> {
+      use children <- on.ok(list.try_map(children, annotate_blames))
+      Ok(Tag(
         blame |> pc("Tag"),
         tag,
         list.index_map(attrs, fn(attr, i) {
@@ -1319,9 +1351,9 @@ pub fn annotate_blames(writerly: Writerly) -> Writerly {
             attr.val,
           )
         }),
-        children
-          |> list.map(annotate_blames),
-      )
+        children,
+      ))
+    }
   }
 }
 
@@ -1352,27 +1384,51 @@ fn lines_to_output_lines(
   |> list.map(line_to_output_line(_, indentation))
 }
 
-fn attr_to_output_line(attr: Attr, indentation: Int) -> OutputLine {
-  let content = case commented_attribute_spaces(attr.key) {
-    Some(spaces) -> "!!" <> string.repeat(" ", spaces) <> attr.val
-    None -> attr.key <> "=" <> attr.val
+fn attribute_value_for_serialization(
+  attr: Attr,
+) -> Result(String, SerializationError) {
+  let whitespace = leading_attribute_whitespace_count(attr.val, 0)
+  case whitespace > maximum_leading_attribute_spaces {
+    True ->
+      Error(ExcessiveLeadingAttributeWhitespaceInSerialization(
+        attr.blame,
+        maximum_leading_attribute_spaces,
+        whitespace,
+      ))
+    False -> Ok(trim_trailing_attribute_whitespace(attr.val))
   }
-  OutputLine(attr.blame, indentation, content)
+}
+
+fn attr_to_output_line(
+  attr: Attr,
+  indentation: Int,
+) -> Result(OutputLine, SerializationError) {
+  case commented_attribute_spaces(attr.key) {
+    Some(spaces) ->
+      Ok(OutputLine(
+        attr.blame,
+        indentation,
+        "!!" <> string.repeat(" ", spaces) <> attr.val,
+      ))
+    None -> {
+      use value <- on.ok(attribute_value_for_serialization(attr))
+      Ok(OutputLine(attr.blame, indentation, attr.key <> "=" <> value))
+    }
+  }
 }
 
 fn attrs_to_output_lines(
   attrs: List(Attr),
   indentation: Int,
-) -> List(OutputLine) {
-  attrs |> list.map(attr_to_output_line(_, indentation))
+) -> Result(List(OutputLine), SerializationError) {
+  attrs |> list.try_map(attr_to_output_line(_, indentation))
 }
 
 fn first_child_is_blurb_and_first_line_of_blurb_could_be_read_as_attr_value_pair(
   nodes: List(Writerly),
 ) -> Bool {
   case nodes {
-    [Paragraph(_, lines), ..] -> {
-      let assert [first, ..] = lines
+    [Paragraph(_, [first, ..]), ..] -> {
       case string.split_once(first.content, "=") {
         Error(_) -> False
         Ok(#(before, _)) -> {
@@ -1390,57 +1446,67 @@ fn writerly_to_output_lines_internal(
   indentation: Int,
   annotate_blames: Bool,
   rgxs: OurRegexes,
-) -> List(OutputLine) {
+) -> Result(List(OutputLine), SerializationError) {
   case t {
-    BlankLine(blame) -> [OutputLine(blame, 0, "")]
+    BlankLine(blame) -> Ok([OutputLine(blame, 0, "")])
 
-    Paragraph(_, lines) ->
-      lines
-      |> add_escapes_in_lines(rgxs.requires_bol_te_escape)
-      |> lines_to_output_lines(indentation)
+    Paragraph(blame, lines) ->
+      case lines {
+        [] -> Error(EmptyParagraph(blame))
+        _ ->
+          lines
+          |> add_escapes_in_lines(rgxs.requires_bol_te_escape)
+          |> lines_to_output_lines(indentation)
+          |> Ok
+      }
 
-    Comment(_, lines) ->
-      lines
-      |> list.map(fn(l) { Line(..l, content: "!!" <> l.content) })
-      |> lines_to_output_lines(indentation)
+    Comment(blame, lines) ->
+      case lines {
+        [] -> Error(EmptyComment(blame))
+        _ ->
+          lines
+          |> list.map(fn(l) { Line(..l, content: "!!" <> l.content) })
+          |> lines_to_output_lines(indentation)
+          |> Ok
+      }
 
     CodeBlock(blame, attrs, lines) -> {
-      list.flatten([
-        [
-          OutputLine(
-            blame,
-            indentation,
-            "```" <> attrs_to_code_block_info(attrs),
-          ),
-        ],
-        lines
-          |> add_escapes_in_lines(rgxs.requires_bol_cb_escape)
-          |> lines_to_output_lines(indentation),
-        [
-          OutputLine(
-            case annotate_blames {
-              False -> blame
-              True -> blame |> pc("CodeBlock end")
-            },
-            indentation,
-            "```",
-          ),
-        ],
-      ])
+      use info <- on.ok(attrs_to_code_block_info(attrs))
+      Ok(
+        list.flatten([
+          [
+            OutputLine(blame, indentation, "```" <> info),
+          ],
+          lines
+            |> add_escapes_in_lines(rgxs.requires_bol_cb_escape)
+            |> lines_to_output_lines(indentation),
+          [
+            OutputLine(
+              case annotate_blames {
+                False -> blame
+                True -> blame |> pc("CodeBlock end")
+              },
+              indentation,
+              "```",
+            ),
+          ],
+        ]),
+      )
     }
 
     Tag(blame, tag, attrs, children) -> {
       let tag_line = OutputLine(blame, indentation, "|> " <> tag)
-      let attr_lines = attrs_to_output_lines(attrs, indentation + 4)
-      let children_lines =
+      use attr_lines <- on.ok(attrs_to_output_lines(attrs, indentation + 4))
+      use children_lines <- on.ok(
         children
-        |> list.map(writerly_to_output_lines_internal(
+        |> list.try_map(writerly_to_output_lines_internal(
           _,
           indentation + 4,
           annotate_blames,
           rgxs,
         ))
-        |> list.flatten
+        |> result.map(list.flatten),
+      )
       let buffer_lines = case
         first_child_is_blurb_and_first_line_of_blurb_could_be_read_as_attr_value_pair(
           children,
@@ -1455,13 +1521,15 @@ fn writerly_to_output_lines_internal(
         }
         False -> []
       }
-      list.flatten([[tag_line], attr_lines, buffer_lines, children_lines])
+      Ok(list.flatten([[tag_line], attr_lines, buffer_lines, children_lines]))
     }
   }
 }
 
-/// Serializes one Writerly node to VXML `OutputLine` values.
-pub fn writerly_to_output_lines(writerly: Writerly) -> List(OutputLine) {
+/// Serializes one Writerly node to Writerly `OutputLine` values.
+pub fn writerly_to_output_lines(
+  writerly: Writerly,
+) -> Result(List(OutputLine), SerializationError) {
   let rgxs = our_regexes()
   writerly
   |> writerly_to_output_lines_internal(0, False, rgxs)
@@ -1470,24 +1538,28 @@ pub fn writerly_to_output_lines(writerly: Writerly) -> List(OutputLine) {
 /// Serializes Writerly nodes to one flat list of VXML `OutputLine` values.
 pub fn writerlys_to_output_lines(
   writerlys: List(Writerly),
-) -> List(OutputLine) {
+) -> Result(List(OutputLine), SerializationError) {
   writerlys
-  |> list.map(writerly_to_output_lines)
-  |> list.flatten
+  |> list.try_map(writerly_to_output_lines)
+  |> result.map(list.flatten)
 }
 
 /// Serializes one Writerly node to Writerly source.
-pub fn writerly_to_string(writerly: Writerly) -> String {
+pub fn writerly_to_string(
+  writerly: Writerly,
+) -> Result(String, SerializationError) {
   writerly
   |> writerly_to_output_lines()
-  |> io_l.output_lines_to_string
+  |> result.map(io_l.output_lines_to_string)
 }
 
 /// Serializes Writerly nodes to Writerly source in the same order.
-pub fn writerlys_to_string(writerlys: List(Writerly)) -> String {
+pub fn writerlys_to_string(
+  writerlys: List(Writerly),
+) -> Result(String, SerializationError) {
   writerlys
   |> writerlys_to_output_lines()
-  |> io_l.output_lines_to_string
+  |> result.map(io_l.output_lines_to_string)
 }
 
 /// Renders a blame-annotated diagnostic table for one Writerly tree.
@@ -1497,10 +1569,10 @@ pub fn writerly_table(
   writerly: Writerly,
   banner: String,
   indent: Int,
-) -> String {
+) -> Result(String, SerializationError) {
   let rgxs = our_regexes()
+  use writerly <- on.ok(annotate_blames(writerly))
   writerly
-  |> annotate_blames
   |> writerly_to_output_lines_internal(0, True, rgxs)
-  |> io_l.output_lines_table(banner, indent)
+  |> result.map(io_l.output_lines_table(_, banner, indent))
 }
