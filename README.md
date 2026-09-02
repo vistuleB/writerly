@@ -175,26 +175,26 @@ the core parser. A definition may be an ordinary element attribute:
 
 ```writerly
 |> Theorem
-    handle=abel-inversion
+    handle=odd-order-theorem
 ```
 
 or an in-text marker:
 
 ```writerly
-abel-inversion##<<
+odd-order-theorem##<<
 ```
 
 A usage places `>>` immediately before the handle name:
 
 ```writerly
-The result now follows from Theorem >>abel-inversion.
+The result now follows from Theorem >>odd-order-theorem.
 ```
 
 A single backslash suppresses either kind of in-text recognition:
 
 ```writerly
-abel-inversion\##<< is ordinary text
-\>>abel-inversion is ordinary text
+odd-order-theorem\##<< is ordinary text
+\>>odd-order-theorem is ordinary text
 ```
 
 Inside fenced code-block content, in-text handle definitions remain active,
@@ -226,83 +226,7 @@ fenced code blocks without prescribing a built-in rich-text vocabulary. This
 is one respect in which Writerly may differ from syntax familiar from
 Elm-Markup and other lightweight markup languages.
 
-## Syntax specification
-
-### Handle grammar
-
-Handles use the following character classes:
-
-```text
-name interior: Unicode letters, numbers, marks, _ . : - ' ^
-name final:    Unicode letters, numbers, marks, _ ' ^
-decorator:     # followed by one or more Unicode letters, numbers, marks, _ : ' -
-```
-
-Thus a name cannot end with `.`, `:`, or `-`. Decorators follow the name and
-are metadata rather than part of the indexed handle.
-
-An attribute definition in an element's attribute zone is either bare or
-assigned:
-
-```writerly
-handle=name
-handle=name <<value>>
-```
-
-The bare form has an empty value. In the assigned form, the first `<<` and
-final `>>` delimit the value; the value itself may contain `<<` or `>>`.
-The handle name may include decorators according to the grammar above.
-
-An in-text definition has either of these forms:
-
-```text
-<boundary>name<decorators>##<<
-##name<decorators>##<<
-```
-
-`<boundary>` is the beginning of line content, a space, `{`, `(`, `[`, or the
-position immediately after an active value closer. The second form uses `##`
-as an explicit opener and may occur anywhere. `##<<` must be directly adjacent
-to the name or final decorator; any intervening backslash prevents recognition,
-regardless of backslash count.
-
-An in-text definition optionally has a same-line value:
-
-```text
-name##<<value>>##
-```
-
-The value extends from `##<<` to the first active `>>##`. Everything inside a
-confirmed value, including spaces, brackets, pipes, and `##<<`, is value text.
-If no active closer occurs on the same line, the value is empty and text after
-`##<<` remains ordinary text.
-
-An odd-length run of consecutive backslashes immediately before `>>##` escapes
-the closer; an even-length run, including zero, leaves it active. An active
-closer is consumed eagerly, but the position after it becomes a definition
-boundary, allowing chaining:
-
-```writerly
-##first##<<first value>>##second##<<second value>>##
-```
-
-The complete definition grammar applies inside fenced code-block content, but
-not on fence lines. Handle usages are not interpreted inside code blocks.
-
-A usage is `>>name`. Outside code blocks it may occur without a left boundary.
-An odd-length run of consecutive backslashes immediately before `>>` escapes
-the usage; an even-length run leaves it active:
-
-```text
->>name       active
-\>>name      escaped
-\\>>name     active
-\\\>>name    escaped
-```
-
-Escape backslashes are preserved in parsed source. Removing them, interpreting
-definition values, and replacing definitions or usages are responsibilities of
-later desugaring stages.
+## Technical Syntax Reference
 
 ### Source and indentation
 
@@ -311,6 +235,22 @@ of spaces and must be a multiple of four. A child is indented exactly four
 spaces farther than its parent. Unexpected deeper indentation is an error.
 
 Writerly documents conventionally use the `.wly` filename extension.
+
+### Line classification
+
+Parsing proceeds linearly. Structural indentation first determines the current
+parent and the line's position within it. A line is then interpreted according
+to that position:
+
+1. An empty line is a semantic blank line.
+2. In an element's initial attribute region, a valid `key=value` line is an
+   attribute and an `!!` line is a commented attribute.
+3. At ordinary child position, `|>` opens an element, `!!` begins a comment,
+   and three initial backticks open a fenced code block.
+4. Any other nonempty line is paragraph text.
+
+A beginning-of-line escape suppresses recognition of comment and code-fence
+markers and permits content to begin with otherwise structural spaces.
 
 ### Elements
 
@@ -453,3 +393,98 @@ one VXML tree requires exactly one non-blank root. `input_lines_to_vxml`
 returns `MissingRoot` or `NonUniqueRoot` when that requirement is not met. For
 multiple roots, use `string_to_writerlys` or `input_lines_to_writerlys`, then
 convert the result to a list of VXML nodes with `writerlys_to_vxmls`.
+
+### Handle grammar
+
+Handles are an official Writerly convention interpreted by editor tooling and
+desugaring. The core Writerly parser preserves their source syntax as ordinary
+attributes or text.
+
+Handle names and decorators use these character classes:
+
+```text
+name interior: Unicode letters, numbers, marks, _ . : - ' ^
+name final:    Unicode letters, numbers, marks, _ ' ^
+decorator:     # followed by one or more Unicode letters, numbers, marks, _ : ' -
+```
+
+A name contains at least one character and cannot end with `.`, `:`, or `-`.
+Zero or more decorators may follow it. Decorators are metadata and are not part
+of the indexed handle name.
+
+#### Attribute definitions
+
+Within an element's attribute region, `handle` defines a handle. Its value has
+one of these forms:
+
+```text
+name
+name <<value>>
+```
+
+The bare form assigns an empty value. In the assigned form, the first `<<` and
+final `>>` delimit the value. The value may itself contain `<<` or `>>`.
+
+#### In-text definitions
+
+An in-text definition has one of these forms:
+
+```text
+<boundary>name<decorators>##<<
+##name<decorators>##<<
+```
+
+`<boundary>` is the beginning of text content, a space, `{`, `(`, `[`, or the
+position immediately after an active value closer. The boundary is retained.
+The second form uses an explicit `##` opener, which is consumed, and may occur
+at any position.
+
+The `##<<` terminator must be directly adjacent to the name or final decorator.
+Any intervening backslash prevents recognition, regardless of the number of
+backslashes.
+
+An in-text definition may carry a same-line value:
+
+```text
+name##<<value>>##
+```
+
+The value begins after `##<<` and ends before the first active `>>##` on the
+same line. Within a confirmed value, all other characters—including spaces,
+brackets, pipes, and `##<<`—are value text. If the line contains no active
+closer, the definition has an empty value and scanning restarts after `##<<` as
+ordinary text; that remaining text may contain another definition.
+
+A run of consecutive backslashes immediately before `>>##` controls whether
+the closer is active. An even count, including zero, is active; an odd count
+escapes the closer. The escaping backslash is removed from the value. An active
+closer is consumed eagerly, and its ending position is a new definition
+boundary. Definitions can therefore be chained:
+
+```writerly
+##first##<<first value>>##second##<<second value>>##
+```
+
+The complete in-text definition grammar applies to fenced code-block content,
+but not to opening or closing fence lines.
+
+#### Usages
+
+A usage is `>>name`. Outside fenced code blocks it has no left-boundary
+requirement. Usages are not recognized inside code-block content or on fence
+lines.
+
+A run of consecutive backslashes immediately before `>>` controls whether the
+usage is active. An even count, including zero, is active; an odd count escapes
+the usage:
+
+```text
+>>name       active
+\>>name      escaped
+\\>>name     active
+\\\>>name    escaped
+```
+
+The Writerly parser preserves these backslashes. Removing usage escapes,
+materializing definitions, interpreting definition values, and resolving usages
+belong to later desugaring stages.
