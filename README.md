@@ -82,9 +82,9 @@ Indentation, `!!`, and triple backticks have structural meaning at the start
 of a line. Prefix them with a backslash when they should instead be text:
 
 ````writerly
-\    text beginning with spaces
+\   text beginning with spaces
 \!! text, not a comment
-\``` text, not a code fence
+\```text, not a code fence
 ````
 
 Writerly removes that one escape backslash and preserves the following text.
@@ -290,7 +290,8 @@ The first `=` separates the key and value. An attribute key must match:
 
 The key and value become an ordinary VXML attribute. Leading spaces and tabs
 after the `=` are preserved as part of the value, up to a maximum of 100.
-Trailing spaces and tabs are trimmed. Empty values are allowed.
+More than 100 leading spaces or tabs is a parsing error. Trailing spaces and
+tabs are trimmed. Empty values are allowed.
 
 Attribute parsing stops at the first line that is not a valid attribute. If an
 element's first text line resembles an attribute, insert a blank line before
@@ -343,7 +344,8 @@ removed from the stored line content:
 
 In the attribute region immediately following an element, an `!!` line is
 instead stored as a synthetic VXML attribute. The number of spaces after `!!`
-is preserved in its key, up to a maximum of 100:
+is preserved in its key, up to a maximum of 100. More than 100 spaces is a
+parsing error:
 
 ```writerly
 |> figure
@@ -381,10 +383,11 @@ annotations written as `&key=value`:
 
 Annotation keys follow the attribute-key grammar. Their values preserve leading
 spaces and tabs, trim trailing spaces and tabs, and obey the same 100-character
-leading-whitespace limit as element attributes. Write `\&` for a literal
-ampersand and `\\` for a literal backslash in the info string or an
-annotation. Parsing and serialization preserve the distinction between the
-leading info string and structured annotations.
+leading-whitespace limit as element attributes; exceeding that limit is a
+parsing error. Write `\&` for a literal ampersand and `\\` for a literal
+backslash in the info string or an annotation. Parsing and serialization
+preserve the distinction between the leading info string and structured
+annotations.
 
 ### Top-level cardinality
 
@@ -488,3 +491,35 @@ the usage:
 The Writerly parser preserves these backslashes. Removing usage escapes,
 materializing definitions, interpreting definition values, and resolving usages
 belong to later desugaring stages.
+
+### Example
+
+Given this Writerly source:
+
+```writerly
+|> Article
+    id=intro
+    |> Title
+        A short example.
+    |> Paragraph
+        Writerly text can span
+        more than one line.
+```
+
+parsing and conversion produce the following serialized VXML:
+
+```vxml
+<> Article
+  id=intro
+  <> Title
+    <>
+      'A short example.'
+  <> Paragraph
+    <>
+      'Writerly text can span'
+      'more than one line.'
+```
+
+The in-memory VXML additionally associates a `Blame` value with every element,
+attribute, text node, and text line. The serialized form above omits those
+values.
