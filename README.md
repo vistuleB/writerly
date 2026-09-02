@@ -32,31 +32,33 @@ provides syntax highlighting, diagnostics, and document navigation.
     title=The observatory on the hill
     handle=observatory
 
-    The road to the observatory follows the river for several
-    miles before turning uphill. In summer, tall grass hides
-    the stones that once marked the route.
+    The road to the observatory follows the river for
+    several miles before turning uphill. In summer, tall
+    grass hides the stones that once marked the route.
 
-    At the summit stands a small white building with a copper
-    dome. The telescope inside was installed in 1927, but its
-    clockwork drive still follows the stars across the sky.
+    At the summit stands a small white building with a
+    copper dome. The telescope inside was installed in
+    1927, but its clockwork drive still follows the stars
+    across the sky.
 
     |> Section
         title=Recording an observation
         handle=recording-observations
 
-        An observation begins with the time, the position of
-        the telescope, and a short description of the weather.
-        Blank lines separate paragraphs, while consecutive
-        lines remain part of the same paragraph.
+        An observation begins with the time, the position
+        of the telescope, and a short description of the
+        weather. Blank lines separate paragraphs, while
+        consecutive lines remain part of the same paragraph.
 
-        A project may give _underscores_ a meaning such as
-        emphasis, although Writerly itself leaves them as text.
+        A project may give _underscores_ a meaning such
+        as emphasis, although Writerly itself leaves them
+        as text.
 
         |> Note
             class=field-note
 
-            Clouds near the horizon can make a bright star
-            appear to fade and return several times.
+            Clouds near the horizon can make a bright
+            star appear to fade and return several times.
 
         The measurements can then be processed by a program:
 
