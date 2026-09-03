@@ -1029,9 +1029,9 @@ type OurRegexes {
 
 fn our_regexes() -> OurRegexes {
   let assert Ok(is_valid_tag) =
-    regexp.from_string("^[a-zA-Z_\\:][-a-zA-Z0-9\\._\\:]*$")
+    regexp.from_string("^[a-zA-Z_:][-a-zA-Z0-9._:]*$")
   let assert Ok(is_valid_key) =
-    regexp.from_string("^[a-zA-Z_][-a-zA-Z0-9\\._\\:]*$")
+    regexp.from_string("^[a-zA-Z_][-a-zA-Z0-9._:]*$")
   let assert Ok(includes_bol_te_escape) =
     regexp.from_string("^\\\\+(\\s|!!|```)")
   let assert Ok(includes_bol_cb_escape) = regexp.from_string("^\\\\+(```)")
