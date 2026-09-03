@@ -74,7 +74,7 @@ provides syntax highlighting, diagnostics, and document navigation.
 The pipe symbol `|>` starts a new node, with the tag name and nothing else on
 the same line. Its attributes and children are indented by four spaces.
 Ordinary prose needs no marker. Consecutive text lines form a paragraph, while
-blank lines are represented explicitly rather than discarded.
+blank lines are represented by their own node type in the parsed AST.
 
 ### Beginning-of-line escape sequences
 

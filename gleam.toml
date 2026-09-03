@@ -1,5 +1,5 @@
 name = "writerly"
-version = "0.2.0"
+version = "0.3.0"
 description = "Reference implementation of the Writerly white label markup language."
 licences = ["MIT"]
 repository = { type = "github", user = "vistuleB", repo = "writerly" }
