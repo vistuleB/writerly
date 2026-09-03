@@ -87,7 +87,7 @@ of a line. Prefix them with a backslash when they should instead be text:
 \```text, not a code fence
 ````
 
-Writerly removes that one escape backslash and preserves the following text.
+Writerly removes the backslash and preserves the following text.
 Inside a fenced code block, use the same technique for a content line that
 would otherwise look like the closing fence. The serializer adds these
 escapes when required.
@@ -106,9 +106,10 @@ Parse a source string with one non-blank top-level element directly to VXML:
 import writerly
 import vxml/io_lines
 
-pub fn parse(source: String) {
+pub fn parse(source: String, source_path: String) {
   source
-  |> io_lines.string_to_input_lines("example.wly", 0)
+  // 'source_path' is used for blame attribution:
+  |> io_lines.string_to_input_lines(source_path, 0)
   |> writerly.input_lines_to_vxml
 }
 ```

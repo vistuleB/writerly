@@ -264,7 +264,7 @@ pub fn writerly_tag_converts_to_vxml_element_test() {
 pub fn vxml_text_node_converts_to_writerly_paragraph_test() {
   let vxml_doc = "<> Book\n  a=b\n  <>\n    'first'\n    'second'"
 
-  let assert Ok([vxml_parsed]) = vxml.parse_string(vxml_doc, "doc", True)
+  let assert Ok(vxml_parsed) = vxml.string_to_vxml(vxml_doc, "doc")
 
   vxml_parsed
   |> wl.vxml_to_writerly

@@ -1,11 +1,11 @@
 name = "writerly"
-version = "0.3.0"
+version = "0.4.0"
 description = "Reference implementation of the Writerly white label markup language."
 licences = ["MIT"]
 repository = { type = "github", user = "vistuleB", repo = "writerly" }
 
 [dependencies]
-vxml = ">= 1.0.9 and < 2.0.0"
+vxml = ">= 2.0.0 and < 3.0.0"
 
 gleam_stdlib = ">= 0.34.0 and < 2.0.0"
 simplifile = ">= 2.3.0 and < 3.0.0"
