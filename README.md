@@ -1,5 +1,7 @@
 # Writerly
 
+<img src="https://raw.githubusercontent.com/vistuleB/writerly/main/logo.svg" alt="Writerly Logo" style="width:110px;height:110px;"/>
+
 [![Package Version](https://img.shields.io/hexpm/v/writerly)](https://hex.pm/packages/writerly)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/writerly/)
 
