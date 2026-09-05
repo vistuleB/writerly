@@ -22,7 +22,7 @@ VXML into target-specific structure. The
 desugaring support.
 
 The
-[Writerly extension for VS Code](https://github.com/vistuleB/writerly-vscode-extension)
+[Writerly extension for VS Code](https://marketplace.visualstudio.com/items?itemName=TabbyNotes.writerly-vscode-extension)
 provides syntax highlighting, diagnostics, and document navigation.
 
 ### Example
