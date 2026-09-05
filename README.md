@@ -1,8 +1,6 @@
 # Writerly
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/vistuleB/writerly/main/logo.svg" alt="Gleam On Package Logo" style="max-height:20vh;width:auto;height:auto" height="350"/>
-</p>
+<img src="https://raw.githubusercontent.com/vistuleB/writerly/main/logo.svg" alt="Writerly Logo" style="max-height:20vh;width:auto;height:auto" height="350"/>
 
 [![Package Version](https://img.shields.io/hexpm/v/writerly)](https://hex.pm/packages/writerly)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/writerly/)
