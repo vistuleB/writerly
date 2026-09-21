@@ -229,6 +229,37 @@ fenced code blocks without prescribing a built-in rich-text vocabulary. This
 is one respect in which Writerly may differ from syntax familiar from
 Elm-Markup and other lightweight markup languages.
 
+### MathJax and LaTeX
+
+Writerly treats LaTeX commands and math delimiters such as `$...$` and
+`\[...\]` as ordinary text. The parser does not interpret or render them;
+a project's desugaring pipeline determines how that text is prepared for
+MathJax or another renderer. Commands such as `\frac` and `\begin{align*}`
+can be written directly, without doubling their backslashes.
+
+Writerly's indentation rules still apply inside LaTeX source. To keep leading
+spaces for visually aligning source lines, put a backslash immediately after
+the structural indentation, before those spaces:
+
+```writerly
+|> Example
+
+    \begin{align*}
+    (x + 1)^2 &= x^2 + 2x + 1 \\
+    \         &= x(x + 2) + 1
+    \end{align*}
+```
+
+Writerly removes the initial escape backslash on the continuation line and
+preserves the spaces after it. The
+[courses source](https://github.com/dominikscheder/courses/blob/main/course-TI-2/wly/03/03-sets-like-R.wly)
+contains an example of this convention in an `align*` environment.
+
+For an example pipeline that desugars LaTeX math in Writerly source for
+MathJax, see
+[the courses pipeline](https://github.com/dominikscheder/courses/blob/main/src/pipeline.gleam),
+including its `math_block_pipeline` and `inline_math_pipeline` steps.
+
 ## Syntax Reference
 
 ### Source and indentation

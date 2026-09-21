@@ -487,3 +487,47 @@ pub fn writerly_serialization_rejects_duplicate_info_prefix_test() {
   |> wl.writerly_to_string
   |> should.equal(Error(wl.DuplicateCodeBlockInfoStringPrefix(no_blame)))
 }
+
+// The README's align* example, including the blank line and the nine spaces
+// after the Writerly escape on the continuation line.
+const latex_alignment_source = "|> Example
+
+    \\begin{align*}
+    (x + 1)^2 &= x^2 + 2x + 1 \\\\
+    \\         &= x(x + 2) + 1
+    \\end{align*}"
+
+fn assert_latex_alignment_contents(parsed: Writerly) {
+  let assert wl.Tag(_, "Example", [], children) = parsed
+  children
+  |> list.filter_map(fn(child) {
+    case child {
+      Paragraph(_, lines) -> Ok(list.map(lines, fn(line) { line.content }))
+      _ -> Error(Nil)
+    }
+  })
+  |> should.equal([
+    [
+      "\\begin{align*}",
+      "(x + 1)^2 &= x^2 + 2x + 1 \\\\",
+      "         &= x(x + 2) + 1",
+      "\\end{align*}",
+    ],
+  ])
+}
+
+pub fn parser_preserves_latex_commands_and_escaped_alignment_spaces_test() {
+  let assert Ok(parsed) =
+    wl.string_to_writerly(latex_alignment_source, "latex-example.wly")
+  assert_latex_alignment_contents(parsed)
+}
+
+pub fn latex_alignment_example_round_trips_without_text_or_indentation_changes_test() {
+  let assert Ok(parsed) =
+    wl.string_to_writerly(latex_alignment_source, "latex-example.wly")
+  let assert Ok(serialized) = wl.writerly_to_string(parsed)
+  serialized |> should.equal(latex_alignment_source)
+  let assert Ok(reparsed) =
+    wl.string_to_writerly(serialized, "latex-example.wly")
+  assert_latex_alignment_contents(reparsed)
+}
