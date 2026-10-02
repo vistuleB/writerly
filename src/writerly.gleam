@@ -437,30 +437,6 @@ pub fn assemble_input_lines_with_path_selector(
   Ok(#(tree, lines))
 }
 
-/// Builds a path selector from inclusive and exclusive path fragments.
-///
-/// Ordinary fragments include paths containing that fragment. Fragments
-/// beginning with `!` exclude matching paths. With only exclusions, all other
-/// paths are included. With both forms, a path must match an inclusion and no
-/// exclusion. An empty list selects every path.
-pub fn path_selector_from_only_paths(
-  only_paths: List(String),
-) -> fn(String) -> Bool {
-  let #(excluded_paths, included_paths) =
-    list.partition(only_paths, string.starts_with(_, "!"))
-  let excluded_paths = list.map(excluded_paths, string.drop_start(_, 1))
-
-  case excluded_paths, included_paths {
-    [], [] -> fn(_) { True }
-    [], _ -> fn(path) { list.any(included_paths, string.contains(path, _)) }
-    _, [] -> fn(path) { !list.any(excluded_paths, string.contains(path, _)) }
-    _, _ -> fn(path) {
-      list.any(included_paths, string.contains(path, _))
-      && !list.any(excluded_paths, string.contains(path, _))
-    }
-  }
-}
-
 /// Assembles every eligible `.wly` file from a file or directory.
 ///
 /// Files and directories with a path component beginning with `#` are ignored.
@@ -1183,7 +1159,7 @@ pub fn input_lines_to_vxml(lines: InputLines) -> Result(VXML, ParseError) {
 //
 // VXML -> Writerly
 //
-// pub fn vxml_to_writerlys
+// pub fn vxml_to_writerly
 // pub fn vxmls_to_writerlys
 // pub fn vxml_to_writerly
 // ************************************************************
@@ -1260,17 +1236,6 @@ fn vxml_to_writerly_internal(
   }
 }
 
-/// Converts one VXML node to a singleton list containing its Writerly node.
-///
-/// Reserved Writerly elements must have the structure produced by
-/// `writerly_to_vxml`.
-pub fn vxml_to_writerlys(
-  vxml: VXML,
-) -> Result(List(Writerly), SerializationError) {
-  vxml_to_writerly_internal(vxml)
-  |> result.map(fn(writerly) { [writerly] })
-}
-
 /// Converts VXML nodes to Writerly nodes in the same order.
 pub fn vxmls_to_writerlys(
   vxmls: List(VXML),
@@ -1289,25 +1254,24 @@ pub fn vxml_to_writerly(vxml: VXML) -> Result(Writerly, SerializationError) {
 //
 // Writerly -> Writerly
 //
-// pub fn annotate_blames
+// fn annotate_blames
 // ************************************************************
 
 /// Adds structural descriptions to the blame comments throughout a tree.
 ///
 /// This is intended for diagnostic tables. Source locations and node contents
-/// are otherwise unchanged.
-pub fn annotate_blames(
-  writerly: Writerly,
-) -> Result(Writerly, SerializationError) {
+/// are otherwise unchanged. Building a code-block description can fail when
+/// its attributes cannot be serialized as a fence info string.
+fn annotate_blames(writerly: Writerly) -> Result(Writerly, SerializationError) {
   case writerly {
     BlankLine(blame) -> Ok(BlankLine(blame |> pc("BlankLine")))
     Paragraph(blame, lines) ->
       Paragraph(
-        blame |> pc("Blurb"),
+        blame |> pc("Paragraph"),
         list.index_map(lines, fn(line, i) {
           Line(
             line.blame
-              |> pc("Blurb > Line(" <> ins(i + 1) <> ")"),
+              |> pc("Paragraph > Line(" <> ins(i + 1) <> ")"),
             line.content,
           )
         }),
@@ -1369,7 +1333,7 @@ pub fn annotate_blames(
 // pub fn writerlys_to_output_lines
 // pub fn writerly_to_string
 // pub fn writerlys_to_string
-// pub fn writerly_table
+// pub fn writerly_debug_table
 // ************************************************************
 
 fn line_to_output_line(line: Line, indentation: Int) -> OutputLine {
@@ -1564,8 +1528,10 @@ pub fn writerlys_to_string(
 
 /// Renders a blame-annotated diagnostic table for one Writerly tree.
 ///
-/// `banner` labels the table and `indent` sets its left margin.
-pub fn writerly_table(
+/// `banner` labels the table and `indent` sets its left margin. Structural
+/// descriptions are added to blame comments automatically. Returns an error
+/// if the tree cannot be serialized as Writerly source.
+pub fn writerly_debug_table(
   writerly: Writerly,
   banner: String,
   indent: Int,

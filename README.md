@@ -140,12 +140,30 @@ Sibling files are processed in lexicographic path order. Their contents are
 indented beneath the contents of `__parent.wly` if a `__parent.wly` file is present.
 Otherwise they are concatenated at their native level of indentation.
 Nested directories are assembled recursively.
-Files and directories whose names start with `#` or do not end with `.wly` are ignored.
+Files and directories whose names start with `#` are ignored. Only files
+ending in `.wly` are included; directory names need no special suffix.
+The input directory must contain at least one eligible `.wly` file directly
+inside it. If it contains only subdirectories, assembly returns `NoFilesFound`,
+even when those subdirectories contain `.wly` files.
 
-Use `assemble_input_lines_with_path_selector` to select source paths, or
-`path_selector_from_only_paths` to construct a selector from a list of paths.
-Assembly returns `InputLine` values so that filenames and line numbers remain
-available to later parsing and VXML processing.
+Use `assemble_input_lines_with_path_selector` to select source paths with a
+`fn(String) -> Bool` predicate receiving relative file paths.
+Assembly returns `Result(#(DirTree, List(InputLine)), AssemblyError)`. The tree
+records the selected file layout; the input lines retain filenames and line
+numbers for later parsing and VXML processing:
+
+```gleam
+import gleam/result
+import writerly
+
+pub fn assemble_lines(path: String) {
+  writerly.assemble_input_lines(path)
+  |> result.map(fn(assembled) {
+    let #(_tree, lines) = assembled
+    lines
+  })
+}
+```
 
 ### VXML representation
 
@@ -162,12 +180,65 @@ first unescaped `&key=value` annotation. The attribute is absent when that
 prefix is empty. Structured fence annotations become ordinary VXML attributes.
 Commented-out element attributes use keys of the form
 `WriterlyCommentedAttribute<N>Spaces`, where `N` records their original spacing.
-Applications should use the public helper functions for recognizing and
-constructing these keys rather than assembling them by hand.
+Use `code_block_info_string_prefix_attribute_key` for the info-string attribute
+key. For commented attributes, use:
+
+- `is_commented_attribute_key(key)` to recognize an encoded key;
+- `commented_attribute_spaces(key)` to recover its spacing as `Option(Int)`;
+- `commented_attribute_key(spaces)` to construct a key as `Option(String)`.
+
+The spacing helpers accept or recognize counts from zero through 100; invalid
+counts or keys produce `None`.
 
 VXML-to-Writerly conversion and Writerly serialization return `Result` values.
 Malformed reserved elements, empty text nodes, and malformed manually
 constructed Writerly nodes are reported as `SerializationError` values.
+
+### Serialization and diagnostics
+
+Convert a VXML node back to Writerly source by first converting it to a
+Writerly node, then serializing it. Both operations can fail, and `result.try`
+propagates either error to the caller:
+
+```gleam
+import gleam/result
+import vxml
+import writerly
+
+pub fn to_source(tree: vxml.VXML) -> Result(String, writerly.SerializationError) {
+  use document <- result.try(writerly.vxml_to_writerly(tree))
+  writerly.writerly_to_string(document)
+}
+```
+
+For multiple VXML nodes, use `vxmls_to_writerlys` followed by
+`writerlys_to_string`. Serialization produces Writerly syntax; it is not a
+byte-for-byte reconstruction of the original source formatting.
+
+`writerly_debug_table(document, "Parsed document", 0)` returns a diagnostic
+table as `Result(String, SerializationError)`. It displays source provenance
+with structural descriptions such as `Paragraph > Line(1)`. The second argument
+is the table banner; the third is its left margin. Annotation is automatic.
+
+### API overview
+
+Singular conversion names operate on one node; plural names operate on lists.
+Parsing to a single node requires exactly one non-blank top-level node.
+
+| Operation | Functions |
+|---|---|
+| Parse source strings | `string_to_writerly`, `string_to_writerlys` |
+| Parse source lines | `input_lines_to_writerly`, `input_lines_to_writerlys` |
+| Parse directly to one VXML root | `input_lines_to_vxml` |
+| Convert Writerly to VXML | `writerly_to_vxml`, `writerlys_to_vxmls` |
+| Convert VXML to Writerly | `vxml_to_writerly`, `vxmls_to_writerlys` |
+| Serialize to source strings | `writerly_to_string`, `writerlys_to_string` |
+| Serialize to provenance-carrying output lines | `writerly_to_output_lines`, `writerlys_to_output_lines` |
+| Assemble source files | `assemble_input_lines`, `assemble_input_lines_with_path_selector` |
+| Render a diagnostic table | `writerly_debug_table` |
+
+Parsing, assembly, VXML-to-Writerly conversion, and serialization return
+`Result` values. Writerly-to-VXML conversion is infallible.
 
 ### Cross-document references
 

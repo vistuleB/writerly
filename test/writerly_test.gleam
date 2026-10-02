@@ -98,29 +98,6 @@ pub fn assembler_nests_child_files_below_the_parent_document_test() {
   )
 }
 
-pub fn path_selector_from_only_paths_test() {
-  let include_chapter_1 = wl.path_selector_from_only_paths(["chapter-1"])
-  include_chapter_1("book/chapter-1/section.wly")
-  |> should.be_true
-  include_chapter_1("book/chapter-2/section.wly")
-  |> should.be_false
-
-  let exclude_draft = wl.path_selector_from_only_paths(["!draft"])
-  exclude_draft("book/chapter-1/section.wly")
-  |> should.be_true
-  exclude_draft("book/draft/section.wly")
-  |> should.be_false
-
-  let include_chapter_1_but_exclude_draft =
-    wl.path_selector_from_only_paths(["chapter-1", "!draft"])
-  include_chapter_1_but_exclude_draft("book/chapter-1/section.wly")
-  |> should.be_true
-  include_chapter_1_but_exclude_draft("book/chapter-1/draft/section.wly")
-  |> should.be_false
-  include_chapter_1_but_exclude_draft("book/chapter-2/section.wly")
-  |> should.be_false
-}
-
 pub fn parser_builds_a_tag_with_an_attribute_test() {
   wl.string_to_writerlys("|> Book\n    a=b", "doc")
   |> should.equal(
